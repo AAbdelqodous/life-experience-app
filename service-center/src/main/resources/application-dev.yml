@@ -1,0 +1,36 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/experience
+    username: abdelqodous
+    password: P@ssw0rd
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+    database: postgresql
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+  mail:
+    host: localhost
+    port: 1025
+    username: abdelqodous
+    password: P@ssw0rd
+    properties:
+      mail:
+        smtp:
+          trust: "*"
+        auth: true
+        starttls:
+          enable: true
+        connectiontimeout: 5000
+        timeout: 3000
+        writetimeout: 5000
+
+application:
+  security:
+    jwt:
+      secret-key: fHinPwOXxcKY5NZt8Tx88UVWNHZQTXX8T1tOtDQODTFKdnexNarAu7av4R1oHhwroBOIzrXMt6u0SYtIr8iYX80ArHsyqkEQ7n068YrWgrR7NByrJ0Pg5PKAk91qx3HB2gkaMyhEGwpZtjVXDTH5PQD1tfa8ev1weg2OW0QaIOLwAeoajtguJqzse9u7JkLb6juzsp2mQWJOzG5J5tqff2Lzos3y43zgnDockPuoZpppgcnWUAWRrXL7G2yCTZXl
+      expiration: 8640000

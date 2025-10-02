@@ -1,0 +1,31 @@
+services:
+  postgres:
+    container_name: le-postgres
+    image: postgres
+    environment:
+      POSTGRES_USER: abdelqodous
+      POSTGRES_PASSWORD: P@ssw0rd
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_DB: experience
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    networks:
+      - experience-net
+    restart: unless-stopped
+
+  mail-dev:
+    container_name: le-mail-dev
+    image: maildev/maildev
+    ports:
+      - 1080:1080
+      - 1025:1025
+
+networks:
+  experience-net:
+    driver: bridge
+
+volumes:
+  postgres:
+    driver: local
