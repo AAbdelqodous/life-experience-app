@@ -1,7 +1,9 @@
+version: '3.8'
+
 services:
   postgres:
     container_name: le-postgres
-    image: postgres
+    image: postgres:15
     environment:
       POSTGRES_USER: abdelqodous
       POSTGRES_PASSWORD: P@ssw0rd
@@ -10,17 +12,25 @@ services:
     volumes:
       - postgres:/var/lib/postgresql/data
     ports:
-      - 5432:5432
+      - "5432:5432"
     networks:
       - experience-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U abdelqodous"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mail-dev:
     container_name: le-mail-dev
     image: maildev/maildev
     ports:
-      - 1080:1080
-      - 1025:1025
+      - "1080:1080"  # Web UI
+      - "1025:1025"  # SMTP Server
+    networks:
+      - experience-net
+    restart: unless-stopped
 
 networks:
   experience-net:
