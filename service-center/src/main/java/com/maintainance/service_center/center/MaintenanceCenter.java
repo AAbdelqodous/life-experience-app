@@ -1,10 +1,17 @@
 package com.maintainance.service_center.center;
 
+import com.maintainance.service_center.address.Address;
+import com.maintainance.service_center.user.User;
 import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Getter
 @Setter
@@ -43,12 +50,60 @@ public class MaintenanceCenter {
     private Address address;
 
     private Double latitude;
-
     private Double longitude;
 
     private LocalTime openingTime;
-
     private LocalTime closingTime;
 
+    @ElementCollection
+    @CollectionTable(name = "center_working_days")
+    private List<String> workingDays = new ArrayList<>();
 
+    @Column(columnDefinition = "DECIMAL(3,2) DEFAULT 0.00")
+    private Double averageRating = 0.0;
+
+    private Integer totalReviews = 0;
+
+    private Boolean isVerified = false;
+    private Boolean isActive = true;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_id")
+    private User owner;
+
+    @ManyToMany
+    @JoinTable(
+            name = "service_category",
+            joinColumns = @JoinColumn("center_id"),
+            inverseJoinColumns = @JoinColumn("category_id")
+    )
+    private List<ServiceCategory> categories = new ArrayList<>();
+
+    @ElementCollection
+    @CollectionTable(name = "center_specializations")
+    private List<String> specializations = new ArrayList<>();
+
+    private String logoUrl;
+
+    @ElementCollection
+    @CollectionTable(name = "center_images")
+    private List<String> imageUrls = new ArrayList<>();
+
+    @ElementCollection
+    @CollectionTable(name = "center_certifications")
+    private List<String> certifications = new ArrayList<>();
+
+    @OneToMany(mappedBy = "center", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Review> reviews = new ArrayList<>();
+
+    @OneToMany(mappedBy = "center", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Booking> bookings = new ArrayList<>();
+
+    @CreatedDate
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @LastModifiedDate
+    @Column(insertable = false)
+    private LocalDateTime updatedAt;
 }
