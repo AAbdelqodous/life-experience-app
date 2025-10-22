@@ -1,6 +1,15 @@
 package com.maintainance.service_center.user;
 
+import com.maintainance.service_center.address.Address;
+import com.maintainance.service_center.booking.Booking;
+import com.maintainance.service_center.center.MaintenanceCenter;
+import com.maintainance.service_center.chat.Conversation;
+import com.maintainance.service_center.complaint.Complaint;
+import com.maintainance.service_center.favorite.UserFavorite;
+import com.maintainance.service_center.notification.Notification;
+import com.maintainance.service_center.review.Review;
 import com.maintainance.service_center.role.Role;
+import com.maintainance.service_center.search.SearchHistory;
 import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
@@ -28,16 +37,55 @@ import java.util.stream.Collectors;
 @EntityListeners(AuditingEntityListener.class)
 public class User implements UserDetails, Principal {
     @Id
-    @GeneratedValue
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
+
     private String firstname;
     private String lastname;
     private LocalDate dateOfBirth;
+
     @Column(unique = true)
     private String email;
+
     private String password;
+
+    @Column(unique = true)
+    private String phone;
+
+    private String alternativePhone;
+
+    // Profile
+    private String profileImageUrl;
+    private String bio;
+
+    // Address
+    @Embedded
+    private Address address;
+
+    // Location
+    private Double lastKnownLatitude;
+    private Double lastKnownLongitude;
+
+    // Preferences
+    @Enumerated(EnumType.STRING)
+    private Language preferredLanguage = Language.AR;
+
+    private Boolean pushNotificationsEnabled = true;
+    private Boolean emailNotificationsEnabled = true;
+    private Boolean smsNotificationsEnabled = false;
+
+    // Firebase token for push notifications
+    private String fcmToken;
+
+    // Account status
     private boolean accountLocked;
     private boolean enabled;
+    private LocalDateTime emailVerifiedAt;
+    private LocalDateTime phoneVerifiedAt;
+
+    // User type - to distinguish between customers and center owners/staff
+    @Enumerated(EnumType.STRING)
+    private UserType userType = UserType.CUSTOMER;
 
     @ManyToMany(fetch = FetchType.EAGER)
     private List<Role> roles;
@@ -45,12 +93,48 @@ public class User implements UserDetails, Principal {
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Token> tokens = new ArrayList<>();
 
+    // Owned maintenance centers (if user is a center owner)
+    @OneToMany(mappedBy = "owner", cascade = CascadeType.ALL)
+    private List<MaintenanceCenter> ownedCenters = new ArrayList<>();
+
+    // Customer relationships
+    @OneToMany(mappedBy = "customer", cascade = CascadeType.ALL)
+    private List<Booking> bookings = new ArrayList<>();
+
+    @OneToMany(mappedBy = "reviewer", cascade = CascadeType.ALL)
+    private List<Review> reviews = new ArrayList<>();
+
+    @OneToMany(mappedBy = "customer", cascade = CascadeType.ALL)
+    private List<Conversation> conversations = new ArrayList<>();
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    private List<UserFavorite> favorites = new ArrayList<>();
+
+    @OneToMany(mappedBy = "recipient", cascade = CascadeType.ALL)
+    private List<Notification> notifications = new ArrayList<>();
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    private List<SearchHistory> searchHistory = new ArrayList<>();
+
+    @OneToMany(mappedBy = "complainant", cascade = CascadeType.ALL)
+    private List<Complaint> complaints = new ArrayList<>();
+
+    // Statistics
+    private Integer totalBookings = 0;
+    private Integer totalReviews = 0;
+    private Integer helpfulReviews = 0; // Reviews marked as helpful by others
+
     @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdDate;
+
     @LastModifiedDate
     @Column(insertable = false)
     private LocalDateTime lastModifiedDate;
+
+    private LocalDateTime lastLoginAt;
+
+
 
     @Override
     public String getName() {
