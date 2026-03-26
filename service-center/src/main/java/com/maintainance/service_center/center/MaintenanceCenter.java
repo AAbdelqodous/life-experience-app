@@ -1,6 +1,9 @@
 package com.maintainance.service_center.center;
 
 import com.maintainance.service_center.address.Address;
+import com.maintainance.service_center.booking.Booking;
+import com.maintainance.service_center.category.ServiceCategory;
+import com.maintainance.service_center.review.Review;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -74,8 +77,8 @@ public class MaintenanceCenter {
     @ManyToMany
     @JoinTable(
             name = "service_category",
-            joinColumns = @JoinColumn("center_id"),
-            inverseJoinColumns = @JoinColumn("category_id")
+            joinColumns = @JoinColumn(name = "center_id"),
+            inverseJoinColumns = @JoinColumn(name = "category_id")
     )
     private List<ServiceCategory> categories = new ArrayList<>();
 

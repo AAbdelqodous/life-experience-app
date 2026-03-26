@@ -30,11 +30,11 @@ public class Complaint {
     private String complaintNumber;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @Column(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id", nullable = false)
     private User complainant;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @Column(name = "center_id", nullable = false)
+    @JoinColumn(name = "center_id", nullable = false)
     private MaintenanceCenter center;
 
     @ManyToOne(fetch = FetchType.LAZY)

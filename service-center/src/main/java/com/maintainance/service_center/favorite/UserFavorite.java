@@ -23,11 +23,11 @@ public class UserFavorite {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @Column(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @Column(name = "center_id", nullable = false)
+    @JoinColumn(name = "center_id", nullable = false)
     private MaintenanceCenter center;
 
     private String notes; // User's personal notes about this center
