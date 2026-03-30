@@ -11,6 +11,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -62,8 +63,8 @@ public class MaintenanceCenter {
     @CollectionTable(name = "center_working_days")
     private List<String> workingDays = new ArrayList<>();
 
-    @Column(columnDefinition = "DECIMAL(3,2) DEFAULT 0.00")
-    private Double averageRating = 0.0;
+    @Column(precision = 3, scale = 2)
+    private BigDecimal averageRating = BigDecimal.ZERO;
 
     private Integer totalReviews = 0;
 
