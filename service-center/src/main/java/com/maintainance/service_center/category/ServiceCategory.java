@@ -32,7 +32,7 @@ public class ServiceCategory {
     @Column(nullable = false)
     private String nameEn;
 
-    private String descriptionAR;
+    private String descriptionAr;
     private String descriptionEn;
 
     private String iconUrl;

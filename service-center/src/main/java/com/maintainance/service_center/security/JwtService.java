@@ -26,11 +26,11 @@ public class JwtService {
     }
 
     private <T> T extractClaim(String token, Function<Claims, T> claimResolver) {
-        final Claims claims = axtractAllClaims(token);
+        final Claims claims = extractAllClaims(token);
         return claimResolver.apply(claims);
     }
 
-    private Claims axtractAllClaims(String token) {
+    private Claims extractAllClaims(String token) {
         return Jwts
                 .parserBuilder()
                 .setSigningKey(getSignInKey())

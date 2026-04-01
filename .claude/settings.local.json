@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//mnt/c/Users/ahmed.elsayed/MaintenanceCenters/life-experience-app/**)",
+      "Bash(./mvnw compile:*)",
+      "Bash(mvn compile:*)"
+    ]
+  }
+}
