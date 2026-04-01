@@ -24,4 +24,8 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     Integer countByCenterId(@Param("centerId") Long centerId);
 
     boolean existsByBookingIdAndReviewerId(Long bookingId, Integer reviewerId);
+
+    Optional<Review> findByReviewerIdAndCenterId(Integer reviewerId, Long centerId);
+
+    Page<Review> findByReviewerId(Integer reviewerId, Pageable pageable);
 }

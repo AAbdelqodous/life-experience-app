@@ -233,8 +233,10 @@ public class BookingService {
     }
 
     private void checkOwnershipOrAccess(Booking booking, User caller) {
-        if (!caller.getId().equals(booking.getCustomer().getId()) && 
-            !caller.getId().equals(booking.getCenter().getOwner().getId())) {
+        boolean isCustomer = caller.getId().equals(booking.getCustomer().getId());
+        boolean isCenterOwner = booking.getCenter().getOwner() != null &&
+                caller.getId().equals(booking.getCenter().getOwner().getId());
+        if (!isCustomer && !isCenterOwner) {
             throw new IllegalArgumentException("You do not have permission to access this booking");
         }
     }
