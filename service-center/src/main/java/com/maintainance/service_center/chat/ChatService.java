@@ -45,6 +45,7 @@ public class ChatService {
                 });
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<ConversationResponse> getUserConversations(User user, int page, int size) {
         log.info("Fetching conversations for user {}, page {}, size {}", user.getId(), page, size);
 
@@ -103,6 +104,31 @@ public class ChatService {
         log.info("Message sent successfully with id {}", savedMessage.getId());
 
         return mapToMessageResponse(savedMessage);
+    }
+
+    @Transactional
+    public MessageResponse sendMessageViaWebSocket(ChatMessageRequest request, User user) {
+        Conversation conversation = conversationRepository.findById(request.getConversationId())
+                .orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
+
+        if (!conversation.getCustomer().getId().equals(user.getId())) {
+            throw new IllegalArgumentException("Access denied to this conversation");
+        }
+
+        Message message = Message.builder()
+                .content(request.getContent())
+                .sender(user)
+                .senderType(SenderType.CUSTOMER)
+                .isRead(false)
+                .conversation(conversation)
+                .build();
+
+        Message saved = messageRepository.save(message);
+
+        conversation.setLastMessageAt(LocalDateTime.now());
+        conversationRepository.save(conversation);
+
+        return mapToMessageResponse(saved);
     }
 
     private ConversationResponse mapToConversationResponse(Conversation conversation) {

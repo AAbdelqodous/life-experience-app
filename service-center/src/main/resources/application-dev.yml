@@ -37,4 +37,11 @@ application:
   mail:
     frontend:
       activation-url: http://localhost:4200/activate-account
+  storage:
+    upload-dir: ./uploads
+    max-file-size: 5242880
+    allowed-content-types:
+      - image/jpeg
+      - image/png
+      - image/jpg
 

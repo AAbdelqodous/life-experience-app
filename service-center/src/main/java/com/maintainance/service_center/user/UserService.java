@@ -1,9 +1,11 @@
 package com.maintainance.service_center.user;
 
+import com.maintainance.service_center.config.FileStorageService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
@@ -11,6 +13,7 @@ import org.springframework.stereotype.Service;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final FileStorageService fileStorageService;
 
     /**
      * Get current user's profile
@@ -165,6 +168,30 @@ public class UserService {
     }
 
     /**
+     * Upload user's profile image
+     */
+    @Transactional
+    public UserResponse uploadProfileImage(MultipartFile file, User user) {
+        // Validate and store the file
+        String fileName = fileStorageService.storeFile(file);
+        
+        // Delete old profile image if exists
+        if (user.getProfileImageUrl() != null) {
+            String oldFileName = extractFileNameFromUrl(user.getProfileImageUrl());
+            fileStorageService.deleteFile(oldFileName);
+        }
+        
+        // Update user's profile image URL
+        String imageUrl = "/uploads/" + fileName;
+        user.setProfileImageUrl(imageUrl);
+        User savedUser = userRepository.save(user);
+        
+        log.info("Profile image uploaded for user ID: {}", savedUser.getId());
+        
+        return mapToResponse(savedUser);
+    }
+
+    /**
      * Get user statistics
      */
     public UserStatisticsResponse getUserStatistics(User user) {
@@ -211,5 +238,15 @@ public class UserService {
                 .lastModifiedDate(user.getLastModifiedDate())
                 .lastLoginAt(user.getLastLoginAt())
                 .build();
+    }
+
+    /**
+     * Extract file name from URL
+     */
+    private String extractFileNameFromUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        return url.substring(url.lastIndexOf('/') + 1);
     }
 }

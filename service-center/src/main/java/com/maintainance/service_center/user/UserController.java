@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/users")
@@ -68,6 +69,15 @@ public class UserController {
             @RequestParam Language language,
             @AuthenticationPrincipal User caller) {
         UserResponse response = userService.updateLanguage(language, caller);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/me/profile-image")
+    @Operation(summary = "Upload profile image", description = "Upload a new profile image for the current user")
+    public ResponseEntity<UserResponse> uploadProfileImage(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal User caller) {
+        UserResponse response = userService.uploadProfileImage(file, caller);
         return ResponseEntity.ok(response);
     }
 
