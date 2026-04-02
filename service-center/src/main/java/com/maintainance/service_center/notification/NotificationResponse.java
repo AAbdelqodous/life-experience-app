@@ -16,9 +16,13 @@ public class NotificationResponse {
     
     private Long id;
     
-    private String title;
+    private String titleAr;
     
-    private String body;
+    private String titleEn;
+    
+    private String bodyAr;
+    
+    private String bodyEn;
     
     private NotificationType notificationType;
     

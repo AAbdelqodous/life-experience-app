@@ -16,11 +16,17 @@ import java.util.Map;
 @AllArgsConstructor
 public class NotificationRequest {
     
-    @NotBlank(message = "Title is required")
-    private String title;
+    @NotBlank(message = "Title (Arabic) is required")
+    private String titleAr;
     
-    @NotBlank(message = "Body is required")
-    private String body;
+    @NotBlank(message = "Title (English) is required")
+    private String titleEn;
+    
+    @NotBlank(message = "Body (Arabic) is required")
+    private String bodyAr;
+    
+    @NotBlank(message = "Body (English) is required")
+    private String bodyEn;
     
     @NotNull(message = "Notification type is required")
     private NotificationType notificationType;

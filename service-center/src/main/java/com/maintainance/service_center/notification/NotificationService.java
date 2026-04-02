@@ -76,8 +76,10 @@ public class NotificationService {
         
         Notification notification = Notification.builder()
                 .recipient(user)
-                .title(request.getTitle())
-                .body(request.getBody())
+                .titleAr(request.getTitleAr())
+                .titleEn(request.getTitleEn())
+                .bodyAr(request.getBodyAr())
+                .bodyEn(request.getBodyEn())
                 .notificationType(request.getNotificationType())
                 .notificationPriority(request.getNotificationPriority() != null ? 
                         request.getNotificationPriority() : NotificationPriority.NORMAL)
@@ -172,8 +174,10 @@ public class NotificationService {
     private NotificationResponse mapToResponse(Notification notification) {
         return NotificationResponse.builder()
                 .id(notification.getId())
-                .title(notification.getTitle())
-                .body(notification.getBody())
+                .titleAr(notification.getTitleAr())
+                .titleEn(notification.getTitleEn())
+                .bodyAr(notification.getBodyAr())
+                .bodyEn(notification.getBodyEn())
                 .notificationType(notification.getNotificationType())
                 .notificationPriority(notification.getNotificationPriority())
                 .referenceType(notification.getReferenceType())

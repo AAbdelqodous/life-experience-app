@@ -28,10 +28,16 @@ public class Notification {
     private User recipient;
 
     @Column(nullable = false)
-    private String title;
+    private String titleAr;
+
+    @Column(nullable = false)
+    private String titleEn;
 
     @Column(nullable = false, length = 500)
-    private String body;
+    private String bodyAr;
+
+    @Column(nullable = false, length = 500)
+    private String bodyEn;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
