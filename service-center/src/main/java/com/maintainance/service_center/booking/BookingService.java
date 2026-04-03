@@ -209,6 +209,31 @@ public class BookingService {
         return toResponse(booking);
     }
 
+    public Page<BookingResponse> findMyCenterBookings(User owner, Pageable pageable) {
+        return centerRepository.findFirstByOwnerId(owner.getId())
+                .map(center -> bookingRepository.findByCenterIdOrderByCreatedAtDesc(center.getId(), pageable)
+                        .map(this::toResponse))
+                .orElse(org.springframework.data.domain.Page.empty(pageable));
+    }
+
+    public BookingStatsResponse getMyCenterStats(User owner) {
+        return centerRepository.findFirstByOwnerId(owner.getId())
+                .map(center -> {
+                    Long centerId = center.getId();
+                    return BookingStatsResponse.builder()
+                            .total(bookingRepository.countByCenterId(centerId))
+                            .pending(bookingRepository.countByCenterIdAndStatus(centerId, BookingStatus.PENDING))
+                            .confirmed(bookingRepository.countByCenterIdAndStatus(centerId, BookingStatus.CONFIRMED))
+                            .inProgress(bookingRepository.countByCenterIdAndStatus(centerId, BookingStatus.IN_PROGRESS))
+                            .completed(bookingRepository.countByCenterIdAndStatus(centerId, BookingStatus.COMPLETED))
+                            .cancelled(bookingRepository.countByCenterIdAndStatus(centerId, BookingStatus.CANCELLED))
+                            .build();
+                })
+                .orElse(BookingStatsResponse.builder()
+                        .total(0).pending(0).confirmed(0).inProgress(0).completed(0).cancelled(0)
+                        .build());
+    }
+
     public List<BookingResponse> getMyBookings(User customer, BookingStatus status) {
         if (status != null) {
             return bookingRepository.findByCustomerIdAndStatuses(customer.getId(), List.of(status))

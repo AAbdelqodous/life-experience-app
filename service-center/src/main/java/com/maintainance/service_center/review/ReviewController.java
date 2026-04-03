@@ -27,6 +27,26 @@ public class ReviewController {
         return ResponseEntity.ok(reviewService.createReview(request, user));
     }
 
+    @GetMapping("/center")
+    @Operation(summary = "Get reviews for the authenticated owner's center")
+    public ResponseEntity<PageResponse<ReviewResponse>> getMyCenterReviews(
+            @AuthenticationPrincipal User user,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        return ResponseEntity.ok(reviewService.getMyCenterReviews(user, page, size));
+    }
+
+    @PostMapping("/{id}/reply")
+    @Operation(summary = "Reply to a review as center owner")
+    public ResponseEntity<ReviewResponse> replyToReview(
+            @PathVariable Long id,
+            @RequestBody java.util.Map<String, String> body,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(reviewService.replyToReview(id, body.get("reply"), user));
+    }
+
     @GetMapping("/center/{id}")
     @Operation(summary = "Get reviews for a specific center")
     public ResponseEntity<PageResponse<ReviewResponse>> getCenterReviews(

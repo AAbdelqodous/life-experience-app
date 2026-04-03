@@ -46,6 +46,19 @@ public class ChatService {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<ConversationResponse> getCenterConversations(User owner, int page, int size) {
+        log.info("Fetching conversations for center owner {}, page {}, size {}", owner.getId(), page, size);
+
+        MaintenanceCenter center = centerRepository.findFirstByOwnerId(owner.getId())
+                .orElseThrow(() -> new EntityNotFoundException("No center found for this account"));
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "lastMessageAt"));
+        Page<Conversation> conversations = conversationRepository.findActiveConversationsByCenter(center.getId(), pageable);
+
+        return PageResponse.of(conversations.map(this::mapToConversationResponse));
+    }
+
+    @Transactional(readOnly = true)
     public PageResponse<ConversationResponse> getUserConversations(User user, int page, int size) {
         log.info("Fetching conversations for user {}, page {}, size {}", user.getId(), page, size);
 
@@ -62,9 +75,12 @@ public class ChatService {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
 
-        // Verify the conversation belongs to user
-        if (!conversation.getCustomer().getId().equals(user.getId())) {
-            throw new IllegalArgumentException("You can only view your own conversations");
+        // Verify the conversation belongs to the user (as customer) or to their center (as owner)
+        boolean isCustomer = conversation.getCustomer().getId().equals(user.getId());
+        boolean isCenterOwner = conversation.getCenter().getOwner() != null &&
+                conversation.getCenter().getOwner().getId().equals(user.getId());
+        if (!isCustomer && !isCenterOwner) {
+            throw new IllegalArgumentException("Access denied to this conversation");
         }
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "createdAt"));
@@ -147,11 +163,17 @@ public class ChatService {
                 SenderType.CENTER_STAFF
         );
 
+        User customer = conversation.getCustomer();
+        String customerName = (customer.getFirstname() != null ? customer.getFirstname() : "") +
+                " " + (customer.getLastname() != null ? customer.getLastname() : "");
+
         return ConversationResponse.builder()
                 .id(conversation.getId())
                 .centerId(conversation.getCenter().getId())
                 .centerNameAr(conversation.getCenter().getNameAr())
                 .centerNameEn(conversation.getCenter().getNameEn())
+                .customerId(customer.getId())
+                .customerName(customerName.trim())
                 .lastMessage(lastMessage)
                 .lastMessageAt(lastMessageAt)
                 .unreadCount(unreadCount.intValue())

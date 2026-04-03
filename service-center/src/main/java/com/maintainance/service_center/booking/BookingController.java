@@ -38,6 +38,21 @@ public class BookingController {
         return ResponseEntity.ok(service.findByCustomer(caller, pageable));
     }
 
+    @GetMapping("/center")
+    public ResponseEntity<Page<BookingResponse>> findMyCenterBookings(
+            @AuthenticationPrincipal User caller,
+            @PageableDefault(size = 20, sort = "createdAt") Pageable pageable
+    ) {
+        return ResponseEntity.ok(service.findMyCenterBookings(caller, pageable));
+    }
+
+    @GetMapping("/center/stats")
+    public ResponseEntity<BookingStatsResponse> getMyCenterStats(
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.getMyCenterStats(caller));
+    }
+
     @GetMapping("/center/{centerId}")
     public ResponseEntity<Page<BookingResponse>> findByCenter(
             @PathVariable Long centerId,
@@ -72,6 +87,31 @@ public class BookingController {
             @AuthenticationPrincipal User caller
     ) {
         return ResponseEntity.ok(service.update(id, request, caller));
+    }
+
+    @PutMapping("/{id}/status")
+    public ResponseEntity<BookingResponse> updateStatus(
+            @PathVariable Long id,
+            @RequestBody java.util.Map<String, String> body,
+            @AuthenticationPrincipal User caller
+    ) {
+        BookingStatus status = BookingStatus.valueOf(body.get("status"));
+        return switch (status) {
+            case CONFIRMED -> ResponseEntity.ok(service.confirm(id, caller));
+            case IN_PROGRESS -> ResponseEntity.ok(service.startService(id, caller));
+            case COMPLETED -> {
+                BookingCompletionRequest req = new BookingCompletionRequest();
+                req.setFinalCost(0.0);
+                req.setCompletionNotes(body.getOrDefault("notes", ""));
+                yield ResponseEntity.ok(service.complete(id, req, caller));
+            }
+            case CANCELLED -> {
+                BookingCancellationRequest req = new BookingCancellationRequest();
+                req.setReason(body.getOrDefault("reason", "Cancelled by center"));
+                yield ResponseEntity.ok(service.cancel(id, req, caller));
+            }
+            default -> ResponseEntity.badRequest().build();
+        };
     }
 
     @PostMapping("/{id}/confirm")

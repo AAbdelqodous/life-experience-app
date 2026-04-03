@@ -3,6 +3,7 @@ package com.maintainance.service_center.center;
 import com.maintainance.service_center.address.Address;
 import com.maintainance.service_center.category.ServiceCategory;
 import com.maintainance.service_center.category.ServiceCategoryRepository;
+import com.maintainance.service_center.config.FileStorageService;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +25,7 @@ public class MaintenanceCenterService {
 
     private final MaintenanceCenterRepository centerRepository;
     private final ServiceCategoryRepository categoryRepository;
+    private final FileStorageService fileStorageService;
 
     @Transactional
     public MaintenanceCenterResponse create(MaintenanceCenterRequest request, User owner) {
@@ -116,6 +119,27 @@ public class MaintenanceCenterService {
 
         centerRepository.save(center);
         log.info("Updated maintenance center id={}", id);
+        return toResponse(center);
+    }
+
+    @Transactional
+    public MaintenanceCenterResponse updateMy(MaintenanceCenterRequest request, User caller) {
+        MaintenanceCenter center = centerRepository.findFirstByOwnerId(caller.getId())
+                .orElseThrow(() -> new EntityNotFoundException("No center found for this account"));
+        return update(center.getId(), request, caller);
+    }
+
+    @Transactional
+    public MaintenanceCenterResponse addImages(MultipartFile file, User caller) {
+        MaintenanceCenter center = centerRepository.findFirstByOwnerId(caller.getId())
+                .orElseThrow(() -> new EntityNotFoundException("No center found for this account"));
+        String fileName = fileStorageService.storeFile(file);
+        String imageUrl = "/uploads/" + fileName;
+        List<String> updated = new ArrayList<>(center.getImageUrls());
+        updated.add(imageUrl);
+        center.setImageUrls(updated);
+        centerRepository.save(center);
+        log.info("Added image {} to center id={}", imageUrl, center.getId());
         return toResponse(center);
     }
 

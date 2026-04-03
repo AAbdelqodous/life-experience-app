@@ -22,6 +22,8 @@ public interface MaintenanceCenterRepository extends JpaRepository<MaintenanceCe
     @Query("SELECT c FROM MaintenanceCenter c JOIN c.categories cat WHERE cat.id = :categoryId AND c.isActive = true")
     Page<MaintenanceCenter> findByCategoryId(@Param("categoryId") Long categoryId, Pageable pageable);
 
+    java.util.Optional<MaintenanceCenter> findFirstByOwnerId(Integer ownerId);
+
     boolean existsByEmail(String email);
 
     // Search methods for advanced filtering
