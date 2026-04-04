@@ -61,4 +61,22 @@ public class UserFavoriteController {
         service.delete(id, caller);
         return ResponseEntity.noContent().build();
     }
+
+    @DeleteMapping("/center/{centerId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public ResponseEntity<Void> deleteByCenterId(
+            @PathVariable Long centerId,
+            @AuthenticationPrincipal User caller
+    ) {
+        service.deleteByCenterId(centerId, caller);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/check/{centerId}")
+    public ResponseEntity<Boolean> isFavorite(
+            @PathVariable Long centerId,
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.isFavorite(centerId, caller));
+    }
 }
