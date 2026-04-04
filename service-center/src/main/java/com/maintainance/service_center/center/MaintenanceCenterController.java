@@ -59,6 +59,13 @@ public class MaintenanceCenterController {
         return ResponseEntity.ok(service.addImages(file, caller));
     }
 
+    @GetMapping("/my/profile")
+    public ResponseEntity<MaintenanceCenterResponse> getMyCenterProfile(
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.getMyCenterProfile(caller));
+    }
+
     @GetMapping("/my")
     public ResponseEntity<Page<MaintenanceCenterSummaryResponse>> findMyCenters(
             @AuthenticationPrincipal User caller,

@@ -1,5 +1,6 @@
 package com.maintainance.service_center.center;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.maintainance.service_center.address.AddressRequest;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -38,8 +39,12 @@ public class MaintenanceCenterRequest {
     private Double latitude;
     private Double longitude;
 
+    @JsonFormat(pattern = "HH:mm:ss")
     private LocalTime openingTime;
+
+    @JsonFormat(pattern = "HH:mm:ss")
     private LocalTime closingTime;
+    private Boolean isActive;
 
     private List<String> workingDays;
     private List<String> specializations;
