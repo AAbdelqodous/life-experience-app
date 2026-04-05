@@ -48,39 +48,27 @@ public class MaintenanceCenterController {
         return ResponseEntity.ok(service.findMyCenter(caller));
     }
 
+    @PostMapping(value = "/my/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<MaintenanceCenterResponse> uploadCenterImage(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.uploadImage(file, caller));
+    }
+
+    @PostMapping(value = "/my/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<MaintenanceCenterResponse> uploadCenterLogo(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.uploadLogo(file, caller));
+    }
+
     @GetMapping("/stats")
     public ResponseEntity<BookingStatsResponse> getStats(
             @AuthenticationPrincipal User caller
     ) {
         return ResponseEntity.ok(bookingService.getCenterStats(caller));
-    }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<MaintenanceCenterResponse> findById(@PathVariable Long id) {
-        return ResponseEntity.ok(service.findById(id));
-    }
-
-    @PutMapping("/my")
-    public ResponseEntity<MaintenanceCenterResponse> updateMy(
-            @RequestBody @Valid MaintenanceCenterRequest request,
-            @AuthenticationPrincipal User caller
-    ) {
-        return ResponseEntity.ok(service.updateMy(request, caller));
-    }
-
-    @PostMapping(value = "/my/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<MaintenanceCenterResponse> addImages(
-            @RequestParam("file") MultipartFile file,
-            @AuthenticationPrincipal User caller
-    ) {
-        return ResponseEntity.ok(service.addImages(file, caller));
-    }
-
-    @GetMapping("/my/profile")
-    public ResponseEntity<MaintenanceCenterResponse> getMyCenterProfile(
-            @AuthenticationPrincipal User caller
-    ) {
-        return ResponseEntity.ok(service.getMyCenterProfile(caller));
     }
 
     @GetMapping("/my")
@@ -107,20 +95,9 @@ public class MaintenanceCenterController {
         return ResponseEntity.ok(service.findByCategory(categoryId, pageable));
     }
 
-    @PostMapping("/my/images")
-    public ResponseEntity<MaintenanceCenterResponse> uploadCenterImage(
-            @RequestParam("file") MultipartFile file,
-            @AuthenticationPrincipal User caller
-    ) {
-        return ResponseEntity.ok(service.uploadImage(file, caller));
-    }
-
-    @PostMapping("/my/logo")
-    public ResponseEntity<MaintenanceCenterResponse> uploadCenterLogo(
-            @RequestParam("file") MultipartFile file,
-            @AuthenticationPrincipal User caller
-    ) {
-        return ResponseEntity.ok(service.uploadLogo(file, caller));
+    @GetMapping("/{id}")
+    public ResponseEntity<MaintenanceCenterResponse> findById(@PathVariable Long id) {
+        return ResponseEntity.ok(service.findById(id));
     }
 
     @PutMapping("/my")
