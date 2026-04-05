@@ -106,6 +106,42 @@ public class ChatService {
         return mapToMessageResponse(savedMessage);
     }
 
+    @Transactional(readOnly = true)
+    public PageResponse<ConversationResponse> getCenterConversations(User owner, int page, int size) {
+        log.info("Fetching center conversations for owner {}, page {}, size {}", owner.getId(), page, size);
+
+        MaintenanceCenter center = centerRepository.findByOwnerIdAndIsActiveTrue(
+                        owner.getId(), PageRequest.of(0, 1))
+                .getContent()
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("No active center found for this owner"));
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "lastMessageAt"));
+        Page<Conversation> conversations = conversationRepository.findActiveConversationsByCenter(center.getId(), pageable);
+
+        return PageResponse.of(conversations.map(this::mapToCenterConversationResponse));
+    }
+
+    @Transactional
+    public PageResponse<MessageResponse> getCenterConversationMessages(Long conversationId, User owner, int page, int size) {
+        log.info("Fetching messages for conversation {} by center owner {}", conversationId, owner.getId());
+
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
+
+        if (!conversation.getCenter().getOwner().getId().equals(owner.getId())) {
+            throw new IllegalArgumentException("You do not have permission to access this conversation");
+        }
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "createdAt"));
+        Page<Message> messages = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId, pageable);
+
+        messageRepository.markAllAsReadInConversation(conversationId, SenderType.CUSTOMER);
+
+        return PageResponse.of(messages.map(this::mapToMessageResponse));
+    }
+
     @Transactional
     public MessageResponse sendMessageViaWebSocket(ChatMessageRequest request, User user) {
         Conversation conversation = conversationRepository.findById(request.getConversationId())
@@ -129,6 +165,36 @@ public class ChatService {
         conversationRepository.save(conversation);
 
         return mapToMessageResponse(saved);
+    }
+
+    private ConversationResponse mapToCenterConversationResponse(Conversation conversation) {
+        String lastMessage = null;
+        LocalDateTime lastMessageAt = conversation.getLastMessageAt();
+
+        if (conversation.getMessages() != null && !conversation.getMessages().isEmpty()) {
+            lastMessage = conversation.getMessages().get(0).getContent();
+            if (lastMessageAt == null) {
+                lastMessageAt = conversation.getMessages().get(0).getCreatedAt();
+            }
+        }
+
+        Long unreadCount = messageRepository.countUnreadMessages(
+                conversation.getId(),
+                SenderType.CUSTOMER
+        );
+
+        return ConversationResponse.builder()
+                .id(conversation.getId())
+                .centerId(conversation.getCenter().getId())
+                .centerNameAr(conversation.getCenter().getNameAr())
+                .centerNameEn(conversation.getCenter().getNameEn())
+                .customerId(conversation.getCustomer().getId())
+                .customerName(conversation.getCustomer().fullName())
+                .lastMessage(lastMessage)
+                .lastMessageAt(lastMessageAt)
+                .unreadCount(unreadCount.intValue())
+                .createdAt(conversation.getCreatedAt())
+                .build();
     }
 
     private ConversationResponse mapToConversationResponse(Conversation conversation) {

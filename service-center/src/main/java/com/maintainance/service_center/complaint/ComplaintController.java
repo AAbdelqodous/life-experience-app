@@ -39,6 +39,14 @@ public class ComplaintController {
         return ResponseEntity.ok(complaintService.getMyComplaints(user, page, size, sortBy, sortOrder));
     }
 
+    @GetMapping("/stats")
+    @Operation(summary = "Get complaint stats for current user")
+    public ResponseEntity<ComplaintStatsResponse> getMyStats(
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(complaintService.getMyStats(user));
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Get a specific complaint by ID")
     public ResponseEntity<ComplaintResponse> getComplaintById(

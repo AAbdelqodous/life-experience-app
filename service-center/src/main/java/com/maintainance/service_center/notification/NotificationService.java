@@ -1,6 +1,7 @@
 package com.maintainance.service_center.notification;
 
 import com.maintainance.service_center.user.User;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,7 +44,7 @@ public class NotificationService {
     public NotificationResponse getNotificationById(Long id, User user) {
         Notification notification = notificationRepository
                 .findByIdAndRecipient(id, user)
-                .orElseThrow(() -> new RuntimeException("Notification not found"));
+                .orElseThrow(() -> new EntityNotFoundException("Notification not found"));
         return mapToResponse(notification);
     }
 
@@ -56,6 +57,21 @@ public class NotificationService {
         return notifications.stream()
                 .map(this::mapToResponse)
                 .toList();
+    }
+
+    /**
+     * Get notification stats (total + unread)
+     */
+    public NotificationStatsResponse getStats(User user) {
+        if (user == null) {
+            throw new IllegalArgumentException("User must be authenticated");
+        }
+        long total = notificationRepository.countByRecipient(user);
+        long unread = notificationRepository.countByRecipientAndIsRead(user, false);
+        return NotificationStatsResponse.builder()
+                .totalCount(total)
+                .unreadCount(unread)
+                .build();
     }
 
     /**
@@ -112,7 +128,7 @@ public class NotificationService {
     public NotificationResponse markAsRead(Long id, User user) {
         Notification notification = notificationRepository
                 .findByIdAndRecipient(id, user)
-                .orElseThrow(() -> new RuntimeException("Notification not found"));
+                .orElseThrow(() -> new EntityNotFoundException("Notification not found"));
         
         if (!notification.getIsRead()) {
             notification.setIsRead(true);
@@ -149,7 +165,7 @@ public class NotificationService {
     public void deleteNotification(Long id, User user) {
         Notification notification = notificationRepository
                 .findByIdAndRecipient(id, user)
-                .orElseThrow(() -> new RuntimeException("Notification not found"));
+                .orElseThrow(() -> new EntityNotFoundException("Notification not found"));
         
         notificationRepository.delete(notification);
         log.info("Notification ID {} deleted for user ID: {}", id, user.getId());

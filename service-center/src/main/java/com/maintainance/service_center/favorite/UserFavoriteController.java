@@ -26,6 +26,13 @@ public class UserFavoriteController {
         return ResponseEntity.ok(service.findByUser(caller));
     }
 
+    @GetMapping("/stats")
+    public ResponseEntity<java.util.Map<String, Long>> getStats(
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(java.util.Map.of("total", service.countByUser(caller)));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<UserFavoriteResponse> findById(
             @PathVariable Long id,

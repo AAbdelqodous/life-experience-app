@@ -28,6 +28,9 @@ public interface ComplaintRepository extends JpaRepository<Complaint, Long> {
 
     boolean existsByComplaintNumber(String complaintNumber);
 
+    @Query("SELECT COUNT(c) FROM Complaint c WHERE c.complainant.id = :userId")
+    Long countByUserId(@Param("userId") Integer userId);
+
     @Query("SELECT COUNT(c) FROM Complaint c WHERE c.complainant.id = :userId AND c.status = :status")
     Long countByUserIdAndStatus(@Param("userId") Integer userId, @Param("status") ComplaintStatus status);
 

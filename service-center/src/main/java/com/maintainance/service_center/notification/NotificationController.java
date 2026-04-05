@@ -47,6 +47,14 @@ public class NotificationController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/stats")
+    @Operation(summary = "Get notification stats", description = "Get total and unread notification counts")
+    public ResponseEntity<NotificationStatsResponse> getStats(
+            @AuthenticationPrincipal User caller) {
+        NotificationStatsResponse response = notificationService.getStats(caller);
+        return ResponseEntity.ok(response);
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Get notification by ID", description = "Retrieve a specific notification by ID")
     public ResponseEntity<NotificationResponse> getNotificationById(

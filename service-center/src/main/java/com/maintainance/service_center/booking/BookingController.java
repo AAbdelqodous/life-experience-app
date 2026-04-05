@@ -38,12 +38,26 @@ public class BookingController {
         return ResponseEntity.ok(service.findByCustomer(caller, pageable));
     }
 
+    @GetMapping("/center/stats")
+    public ResponseEntity<BookingStatsResponse> getCenterStats(
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.getCenterStats(caller));
+    }
+
     @GetMapping("/center/{centerId}")
     public ResponseEntity<Page<BookingResponse>> findByCenter(
             @PathVariable Long centerId,
             @PageableDefault(size = 20, sort = "createdAt") Pageable pageable
     ) {
         return ResponseEntity.ok(service.findByCenter(centerId, pageable));
+    }
+
+    @GetMapping("/stats")
+    public ResponseEntity<BookingStatsResponse> getMyStats(
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.getMyStats(caller));
     }
 
     @GetMapping("/{id}")

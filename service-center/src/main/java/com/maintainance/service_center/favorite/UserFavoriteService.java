@@ -19,6 +19,10 @@ public class UserFavoriteService {
     private final UserFavoriteRepository favoriteRepository;
     private final MaintenanceCenterRepository centerRepository;
 
+    public long countByUser(User user) {
+        return favoriteRepository.countByUserId(user.getId());
+    }
+
     public List<UserFavoriteResponse> findByUser(User user) {
         return favoriteRepository.findByUserIdOrderByCreatedAtDesc(user.getId())
                 .stream()

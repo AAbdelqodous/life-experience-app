@@ -3,15 +3,18 @@ package com.maintainance.service_center.center;
 import com.maintainance.service_center.address.Address;
 import com.maintainance.service_center.category.ServiceCategory;
 import com.maintainance.service_center.category.ServiceCategoryRepository;
+import com.maintainance.service_center.config.FileStorageService;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +26,7 @@ public class MaintenanceCenterService {
 
     private final MaintenanceCenterRepository centerRepository;
     private final ServiceCategoryRepository categoryRepository;
+    private final FileStorageService fileStorageService;
 
     @Transactional
     public MaintenanceCenterResponse create(MaintenanceCenterRequest request, User owner) {
@@ -67,6 +71,57 @@ public class MaintenanceCenterService {
 
     public MaintenanceCenterResponse findById(Long id) {
         return toResponse(getActiveCenter(id));
+    }
+
+    public MaintenanceCenterResponse findMyCenter(User owner) {
+        return centerRepository.findByOwnerIdAndIsActiveTrue(owner.getId(), PageRequest.of(0, 1))
+                .getContent()
+                .stream()
+                .findFirst()
+                .map(this::toResponse)
+                .orElseThrow(() -> new EntityNotFoundException("No active center found for this owner"));
+    }
+
+    @Transactional
+    public MaintenanceCenterResponse uploadImage(MultipartFile file, User owner) {
+        MaintenanceCenter center = centerRepository.findByOwnerIdAndIsActiveTrue(owner.getId(), PageRequest.of(0, 1))
+                .getContent()
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("No active center found for this owner"));
+
+        String fileName = fileStorageService.storeFile(file);
+        String imageUrl = "/uploads/" + fileName;
+
+        if (center.getImageUrls() == null) {
+            center.setImageUrls(new ArrayList<>());
+        }
+        center.getImageUrls().add(imageUrl);
+        centerRepository.save(center);
+
+        log.info("Image uploaded for center id={}", center.getId());
+        return toResponse(center);
+    }
+
+    @Transactional
+    public MaintenanceCenterResponse uploadLogo(MultipartFile file, User owner) {
+        MaintenanceCenter center = centerRepository.findByOwnerIdAndIsActiveTrue(owner.getId(), PageRequest.of(0, 1))
+                .getContent()
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("No active center found for this owner"));
+
+        if (center.getLogoUrl() != null) {
+            String oldFileName = center.getLogoUrl().substring(center.getLogoUrl().lastIndexOf('/') + 1);
+            fileStorageService.deleteFile(oldFileName);
+        }
+
+        String fileName = fileStorageService.storeFile(file);
+        center.setLogoUrl("/uploads/" + fileName);
+        centerRepository.save(center);
+
+        log.info("Logo uploaded for center id={}", center.getId());
+        return toResponse(center);
     }
 
     public Page<MaintenanceCenterSummaryResponse> findByOwner(User owner, Pageable pageable) {

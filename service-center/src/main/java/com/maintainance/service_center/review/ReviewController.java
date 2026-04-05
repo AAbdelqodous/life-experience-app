@@ -27,6 +27,14 @@ public class ReviewController {
         return ResponseEntity.ok(reviewService.createReview(request, user));
     }
 
+    @GetMapping("/center/stats")
+    @Operation(summary = "Get review stats for the authenticated center owner")
+    public ResponseEntity<ReviewStatsResponse> getReviewStats(
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(reviewService.getReviewStats(user));
+    }
+
     @GetMapping("/center/{id}")
     @Operation(summary = "Get reviews for a specific center")
     public ResponseEntity<PageResponse<ReviewResponse>> getCenterReviews(

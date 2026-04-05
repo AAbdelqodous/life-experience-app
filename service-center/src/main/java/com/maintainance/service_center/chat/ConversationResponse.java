@@ -16,6 +16,8 @@ public class ConversationResponse {
     private Long centerId;
     private String centerNameAr;
     private String centerNameEn;
+    private Integer customerId;
+    private String customerName;
     private String lastMessage;
     private LocalDateTime lastMessageAt;
     private int unreadCount;

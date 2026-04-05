@@ -26,4 +26,22 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Booking> findByCenterIdAndStatuses(@Param("centerId") Long centerId, @Param("statuses") List<BookingStatus> statuses);
 
     boolean existsByBookingNumber(String bookingNumber);
+
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.center.owner.id = :ownerId AND b.bookingStatus = :status")
+    Long countByOwnerIdAndStatus(@Param("ownerId") Integer ownerId, @Param("status") BookingStatus status);
+
+    @Query("SELECT COALESCE(SUM(b.finalCost), 0) FROM Booking b WHERE b.center.owner.id = :ownerId AND b.bookingStatus = 'COMPLETED'")
+    Double sumFinalCostByOwnerId(@Param("ownerId") Integer ownerId);
+
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.center.owner.id = :ownerId")
+    Long countByOwnerId(@Param("ownerId") Integer ownerId);
+
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.customer.id = :customerId")
+    Long countByCustomerId(@Param("customerId") Integer customerId);
+
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.customer.id = :customerId AND b.bookingStatus = :status")
+    Long countByCustomerIdAndStatus(@Param("customerId") Integer customerId, @Param("status") BookingStatus status);
+
+    @Query("SELECT COALESCE(SUM(b.finalCost), 0) FROM Booking b WHERE b.customer.id = :customerId AND b.bookingStatus = 'COMPLETED'")
+    Double sumFinalCostByCustomerId(@Param("customerId") Integer customerId);
 }

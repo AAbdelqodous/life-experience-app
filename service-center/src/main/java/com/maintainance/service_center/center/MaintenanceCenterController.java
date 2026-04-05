@@ -1,5 +1,7 @@
 package com.maintainance.service_center.center;
 
+import com.maintainance.service_center.booking.BookingService;
+import com.maintainance.service_center.booking.BookingStatsResponse;
 import com.maintainance.service_center.user.User;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -11,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("centers")
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 public class MaintenanceCenterController {
 
     private final MaintenanceCenterService service;
+    private final BookingService bookingService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -34,6 +38,20 @@ public class MaintenanceCenterController {
             @PageableDefault(size = 20, sort = "createdAt") Pageable pageable
     ) {
         return ResponseEntity.ok(service.findAll(pageable));
+    }
+
+    @GetMapping("/my/profile")
+    public ResponseEntity<MaintenanceCenterResponse> getMyProfile(
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.findMyCenter(caller));
+    }
+
+    @GetMapping("/stats")
+    public ResponseEntity<BookingStatsResponse> getStats(
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(bookingService.getCenterStats(caller));
     }
 
     @GetMapping("/{id}")
@@ -63,6 +81,31 @@ public class MaintenanceCenterController {
             @PageableDefault(size = 20) Pageable pageable
     ) {
         return ResponseEntity.ok(service.findByCategory(categoryId, pageable));
+    }
+
+    @PostMapping("/my/images")
+    public ResponseEntity<MaintenanceCenterResponse> uploadCenterImage(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.uploadImage(file, caller));
+    }
+
+    @PostMapping("/my/logo")
+    public ResponseEntity<MaintenanceCenterResponse> uploadCenterLogo(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.uploadLogo(file, caller));
+    }
+
+    @PutMapping("/my")
+    public ResponseEntity<MaintenanceCenterResponse> updateMyCenter(
+            @RequestBody @Valid MaintenanceCenterRequest request,
+            @AuthenticationPrincipal User caller
+    ) {
+        MaintenanceCenterResponse profile = service.findMyCenter(caller);
+        return ResponseEntity.ok(service.update(profile.getId(), request, caller));
     }
 
     @PutMapping("/{id}")

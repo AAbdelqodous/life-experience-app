@@ -29,6 +29,19 @@ public class ComplaintService {
     private final MaintenanceCenterRepository centerRepository;
     private final BookingRepository bookingRepository;
 
+    public ComplaintStatsResponse getMyStats(User user) {
+        Integer userId = user.getId();
+        return ComplaintStatsResponse.builder()
+                .total(complaintRepository.countByUserId(userId))
+                .pending(complaintRepository.countByUserIdAndStatus(userId, ComplaintStatus.PENDING))
+                .underReview(complaintRepository.countByUserIdAndStatus(userId, ComplaintStatus.UNDER_REVIEW))
+                .inProgress(complaintRepository.countByUserIdAndStatus(userId, ComplaintStatus.IN_PROGRESS))
+                .resolved(complaintRepository.countByUserIdAndStatus(userId, ComplaintStatus.RESOLVED))
+                .closed(complaintRepository.countByUserIdAndStatus(userId, ComplaintStatus.CLOSED))
+                .escalated(complaintRepository.countByUserIdAndStatus(userId, ComplaintStatus.ESCALATED))
+                .build();
+    }
+
     @Transactional
     public ComplaintResponse fileComplaint(ComplaintRequest request, User user) {
         log.info("Filing complaint for center {} by user {}", request.getCenterId(), user.getId());

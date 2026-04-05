@@ -3,11 +3,13 @@ package com.maintainance.service_center.booking;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
 import com.maintainance.service_center.user.User;
+import com.maintainance.service_center.user.UserType;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -207,6 +209,45 @@ public class BookingService {
         bookingRepository.save(booking);
         log.info("Cancelled booking id={} by {}", id, booking.getCancelledBy());
         return toResponse(booking);
+    }
+
+    public BookingStatsResponse getMyStats(User customer) {
+        Integer customerId = customer.getId();
+        return BookingStatsResponse.builder()
+                .total(bookingRepository.countByCustomerId(customerId))
+                .pending(bookingRepository.countByCustomerIdAndStatus(customerId, BookingStatus.PENDING))
+                .confirmed(bookingRepository.countByCustomerIdAndStatus(customerId, BookingStatus.CONFIRMED))
+                .inProgress(bookingRepository.countByCustomerIdAndStatus(customerId, BookingStatus.IN_PROGRESS))
+                .completed(bookingRepository.countByCustomerIdAndStatus(customerId, BookingStatus.COMPLETED))
+                .cancelled(bookingRepository.countByCustomerIdAndStatus(customerId, BookingStatus.CANCELLED))
+                .noShow(bookingRepository.countByCustomerIdAndStatus(customerId, BookingStatus.NO_SHOW))
+                .rescheduled(bookingRepository.countByCustomerIdAndStatus(customerId, BookingStatus.RESCHEDULED))
+                .totalRevenue(bookingRepository.sumFinalCostByCustomerId(customerId))
+                .build();
+    }
+
+    public BookingStatsResponse getCenterStats(User caller) {
+        if (caller == null) {
+            throw new IllegalArgumentException("User must be authenticated");
+        }
+        
+        // Verify user is a center owner
+        if (caller.getUserType() != UserType.CENTER_OWNER) {
+            throw new AccessDeniedException("Only center owners can access center statistics");
+        }
+        
+        Integer ownerId = caller.getId();
+        return BookingStatsResponse.builder()
+                .total(bookingRepository.countByOwnerId(ownerId))
+                .pending(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.PENDING))
+                .confirmed(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.CONFIRMED))
+                .inProgress(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.IN_PROGRESS))
+                .completed(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.COMPLETED))
+                .cancelled(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.CANCELLED))
+                .noShow(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.NO_SHOW))
+                .rescheduled(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.RESCHEDULED))
+                .totalRevenue(bookingRepository.sumFinalCostByOwnerId(ownerId))
+                .build();
     }
 
     public List<BookingResponse> getMyBookings(User customer, BookingStatus status) {

@@ -4,6 +4,7 @@ import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
 import com.maintainance.service_center.common.PageResponse;
 import com.maintainance.service_center.user.User;
+import com.maintainance.service_center.user.UserType;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +48,32 @@ public class ReviewService {
         log.info("Review created successfully with id {}", savedReview.getId());
 
         return mapToResponse(savedReview);
+    }
+
+    public ReviewStatsResponse getReviewStats(User owner) {
+        if (owner == null) {
+            throw new IllegalArgumentException("User must be authenticated");
+        }
+        
+        // Verify user is a center owner
+        if (owner.getUserType() != UserType.CENTER_OWNER) {
+            throw new AccessDeniedException("Only center owners can access review statistics");
+        }
+        
+        MaintenanceCenter center = centerRepository.findByOwnerIdAndIsActiveTrue(
+                        owner.getId(), PageRequest.of(0, 1))
+                .getContent()
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("No active center found for this owner"));
+
+        long total = reviewRepository.countByCenterId(center.getId());
+        Double avg = reviewRepository.calculateAverageRating(center.getId());
+
+        return ReviewStatsResponse.builder()
+                .totalReviews(total)
+                .averageRating(avg)
+                .build();
     }
 
     public PageResponse<ReviewResponse> getCenterReviews(Long centerId, int page, int size) {

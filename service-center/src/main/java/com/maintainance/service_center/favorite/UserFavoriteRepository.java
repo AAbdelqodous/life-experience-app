@@ -10,6 +10,8 @@ public interface UserFavoriteRepository extends JpaRepository<UserFavorite, Long
 
     List<UserFavorite> findByUserIdOrderByCreatedAtDesc(Integer userId);
 
+    long countByUserId(Integer userId);
+
     boolean existsByUserIdAndCenterId(Integer userId, Long centerId);
 
     void deleteByUserIdAndCenterId(Integer userId, Long centerId);
