@@ -87,6 +87,16 @@ public class UserFavoriteService {
         log.info("Deleted favorite id={}", id);
     }
 
+    @Transactional
+    public void deleteByCenterId(Long centerId, User caller) {
+        favoriteRepository.deleteByUserIdAndCenterId(caller.getId(), centerId);
+        log.info("Deleted favorite for user id={} center id={}", caller.getId(), centerId);
+    }
+
+    public boolean isFavorite(Long centerId, User caller) {
+        return favoriteRepository.existsByUserIdAndCenterId(caller.getId(), centerId);
+    }
+
     private UserFavorite getFavorite(Long id) {
         return favoriteRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Favorite not found with id: " + id));

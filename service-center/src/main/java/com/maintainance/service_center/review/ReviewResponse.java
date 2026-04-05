@@ -20,6 +20,7 @@ public class ReviewResponse {
     private String centerNameEn;
     private String userFirstname;
     private String userLastname;
+    private String ownerReply; // maps from Review.centerResponse
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

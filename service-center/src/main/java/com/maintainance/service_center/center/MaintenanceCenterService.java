@@ -18,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -128,6 +129,12 @@ public class MaintenanceCenterService {
         return centerRepository.findByOwnerIdAndIsActiveTrue(owner.getId(), pageable).map(this::toSummaryResponse);
     }
 
+    public MaintenanceCenterResponse getMyCenterProfile(User owner) {
+        MaintenanceCenter center = centerRepository.findFirstByOwnerId(owner.getId())
+                .orElseThrow(() -> new EntityNotFoundException("No center found for this account"));
+        return toResponse(center);
+    }
+
     public Page<MaintenanceCenterSummaryResponse> search(String query, Pageable pageable) {
         return centerRepository.searchByName(query, pageable).map(this::toSummaryResponse);
     }
@@ -144,7 +151,7 @@ public class MaintenanceCenterService {
         MaintenanceCenter center = getActiveCenter(id);
         checkOwnership(center, caller);
 
-        if (!center.getEmail().equals(request.getEmail()) && centerRepository.existsByEmail(request.getEmail())) {
+        if (!Objects.equals(center.getEmail(), request.getEmail()) && centerRepository.existsByEmail(request.getEmail())) {
             throw new IllegalArgumentException("A center with this email already exists");
         }
 
@@ -162,6 +169,7 @@ public class MaintenanceCenterService {
         center.setLongitude(request.getLongitude());
         center.setOpeningTime(request.getOpeningTime());
         center.setClosingTime(request.getClosingTime());
+        if (request.getIsActive() != null) center.setIsActive(request.getIsActive());
         center.setWorkingDays(request.getWorkingDays() != null ? request.getWorkingDays() : new ArrayList<>());
         center.setSpecializations(request.getSpecializations() != null ? request.getSpecializations() : new ArrayList<>());
         center.setLogoUrl(request.getLogoUrl());
@@ -171,6 +179,27 @@ public class MaintenanceCenterService {
 
         centerRepository.save(center);
         log.info("Updated maintenance center id={}", id);
+        return toResponse(center);
+    }
+
+    @Transactional
+    public MaintenanceCenterResponse updateMy(MaintenanceCenterRequest request, User caller) {
+        MaintenanceCenter center = centerRepository.findFirstByOwnerId(caller.getId())
+                .orElseThrow(() -> new EntityNotFoundException("No center found for this account"));
+        return update(center.getId(), request, caller);
+    }
+
+    @Transactional
+    public MaintenanceCenterResponse addImages(MultipartFile file, User caller) {
+        MaintenanceCenter center = centerRepository.findFirstByOwnerId(caller.getId())
+                .orElseThrow(() -> new EntityNotFoundException("No center found for this account"));
+        String fileName = fileStorageService.storeFile(file);
+        String imageUrl = "/uploads/" + fileName;
+        List<String> updated = new ArrayList<>(center.getImageUrls());
+        updated.add(imageUrl);
+        center.setImageUrls(updated);
+        centerRepository.save(center);
+        log.info("Added image {} to center id={}", imageUrl, center.getId());
         return toResponse(center);
     }
 

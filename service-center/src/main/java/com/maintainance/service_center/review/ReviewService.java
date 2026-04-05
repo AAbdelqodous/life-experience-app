@@ -135,6 +135,33 @@ public class ReviewService {
         log.info("Review {} deleted successfully", reviewId);
     }
 
+    public PageResponse<ReviewResponse> getMyCenterReviews(User owner, int page, int size) {
+        log.info("Fetching reviews for owner {}'s center, page {}, size {}", owner.getId(), page, size);
+
+        MaintenanceCenter center = centerRepository.findFirstByOwnerId(owner.getId())
+                .orElseThrow(() -> new EntityNotFoundException("No center found for this account"));
+
+        return getCenterReviews(center.getId(), page, size);
+    }
+
+    @Transactional
+    public ReviewResponse replyToReview(Long reviewId, String reply, User owner) {
+        log.info("Owner {} replying to review {}", owner.getId(), reviewId);
+
+        Review review = reviewRepository.findById(reviewId)
+                .orElseThrow(() -> new EntityNotFoundException("Review not found"));
+
+        if (!review.getCenter().getOwner().getId().equals(owner.getId())) {
+            throw new IllegalArgumentException("You can only reply to reviews for your own center");
+        }
+
+        review.setCenterResponse(reply);
+        review.setCenterResponseDate(java.time.LocalDateTime.now());
+        reviewRepository.save(review);
+
+        return mapToResponse(review);
+    }
+
     private ReviewResponse mapToResponse(Review review) {
         return ReviewResponse.builder()
                 .id(review.getId())
@@ -145,6 +172,7 @@ public class ReviewService {
                 .centerNameEn(review.getCenter().getNameEn())
                 .userFirstname(review.getReviewer().getFirstname())
                 .userLastname(review.getReviewer().getLastname())
+                .ownerReply(review.getCenterResponse())
                 .createdAt(review.getCreatedAt())
                 .updatedAt(review.getUpdatedAt())
                 .build();

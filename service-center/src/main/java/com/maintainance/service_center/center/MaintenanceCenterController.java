@@ -10,6 +10,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -57,6 +58,29 @@ public class MaintenanceCenterController {
     @GetMapping("/{id}")
     public ResponseEntity<MaintenanceCenterResponse> findById(@PathVariable Long id) {
         return ResponseEntity.ok(service.findById(id));
+    }
+
+    @PutMapping("/my")
+    public ResponseEntity<MaintenanceCenterResponse> updateMy(
+            @RequestBody @Valid MaintenanceCenterRequest request,
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.updateMy(request, caller));
+    }
+
+    @PostMapping(value = "/my/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<MaintenanceCenterResponse> addImages(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.addImages(file, caller));
+    }
+
+    @GetMapping("/my/profile")
+    public ResponseEntity<MaintenanceCenterResponse> getMyCenterProfile(
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.getMyCenterProfile(caller));
     }
 
     @GetMapping("/my")
