@@ -38,16 +38,6 @@ public class ChatController {
         return ResponseEntity.ok(chatService.getUserConversations(user, page, size));
     }
 
-    @GetMapping("/center")
-    @Operation(summary = "Get center owner's conversations")
-    public ResponseEntity<PageResponse<ConversationResponse>> getCenterConversations(
-            @AuthenticationPrincipal User owner,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
-    ) {
-        return ResponseEntity.ok(chatService.getCenterConversations(owner, page, size));
-    }
-
     @GetMapping("/center/messages")
     @Operation(summary = "Get messages for a conversation (center owner view)")
     public ResponseEntity<PageResponse<MessageResponse>> getCenterConversationMessages(

@@ -13,9 +13,9 @@ import java.util.Optional;
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
-    Page<Booking> findByCustomerIdOrderByCreatedAtDesc(Integer customerId, Pageable pageable);
+    Page<Booking> findByCustomer_IdOrderByCreatedAtDesc(Integer customerId, Pageable pageable);
 
-    Page<Booking> findByCenterIdOrderByCreatedAtDesc(Long centerId, Pageable pageable);
+    Page<Booking> findByCenter_IdOrderByCreatedAtDesc(Long centerId, Pageable pageable);
 
     Optional<Booking> findByBookingNumber(String bookingNumber);
 

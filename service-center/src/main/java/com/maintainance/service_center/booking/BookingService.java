@@ -26,7 +26,7 @@ public class BookingService {
     private final MaintenanceCenterRepository centerRepository;
 
     public Page<BookingResponse> findByCustomer(User customer, Pageable pageable) {
-        return bookingRepository.findByCustomerIdOrderByCreatedAtDesc(customer.getId(), pageable)
+        return bookingRepository.findByCustomer_IdOrderByCreatedAtDesc(customer.getId(), pageable)
                 .map(this::toResponse);
     }
 
@@ -34,7 +34,7 @@ public class BookingService {
         if (!centerRepository.existsById(centerId)) {
             throw new EntityNotFoundException("Center not found with id: " + centerId);
         }
-        return bookingRepository.findByCenterIdOrderByCreatedAtDesc(centerId, pageable)
+        return bookingRepository.findByCenter_IdOrderByCreatedAtDesc(centerId, pageable)
                 .map(this::toResponse);
     }
 
@@ -257,7 +257,7 @@ public class BookingService {
                     .map(this::toResponse)
                     .toList();
         }
-        return bookingRepository.findByCustomerIdOrderByCreatedAtDesc(customer.getId(), org.springframework.data.domain.Pageable.unpaged())
+        return bookingRepository.findByCustomer_IdOrderByCreatedAtDesc(customer.getId(), org.springframework.data.domain.Pageable.unpaged())
                 .stream()
                 .map(this::toResponse)
                 .toList();

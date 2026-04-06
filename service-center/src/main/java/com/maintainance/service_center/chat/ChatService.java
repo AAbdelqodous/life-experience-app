@@ -45,18 +45,7 @@ public class ChatService {
                 });
     }
 
-    @Transactional(readOnly = true)
-    public PageResponse<ConversationResponse> getCenterConversations(User owner, int page, int size) {
-        log.info("Fetching conversations for center owner {}, page {}, size {}", owner.getId(), page, size);
 
-        MaintenanceCenter center = centerRepository.findFirstByOwnerId(owner.getId())
-                .orElseThrow(() -> new EntityNotFoundException("No center found for this account"));
-
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "lastMessageAt"));
-        Page<Conversation> conversations = conversationRepository.findActiveConversationsByCenter(center.getId(), pageable);
-
-        return PageResponse.of(conversations.map(this::mapToConversationResponse));
-    }
 
     @Transactional(readOnly = true)
     public PageResponse<ConversationResponse> getUserConversations(User user, int page, int size) {
