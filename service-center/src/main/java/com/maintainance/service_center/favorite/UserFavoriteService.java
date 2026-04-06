@@ -20,11 +20,11 @@ public class UserFavoriteService {
     private final MaintenanceCenterRepository centerRepository;
 
     public long countByUser(User user) {
-        return favoriteRepository.countByUserId(user.getId());
+        return favoriteRepository.countByUser_Id(user.getId());
     }
 
     public List<UserFavoriteResponse> findByUser(User user) {
-        return favoriteRepository.findByUserIdOrderByCreatedAtDesc(user.getId())
+        return favoriteRepository.findByUser_IdOrderByCreatedAtDesc(user.getId())
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -38,7 +38,7 @@ public class UserFavoriteService {
 
     @Transactional
     public UserFavoriteResponse create(UserFavoriteRequest request, User user) {
-        if (favoriteRepository.existsByUserIdAndCenterId(user.getId(), request.getCenterId())) {
+        if (favoriteRepository.existsByUser_IdAndCenter_Id(user.getId(), request.getCenterId())) {
             throw new IllegalArgumentException("Center already in favorites");
         }
 
@@ -63,7 +63,7 @@ public class UserFavoriteService {
         checkAccess(favorite, caller);
 
         if (!favorite.getCenter().getId().equals(request.getCenterId()) &&
-            favoriteRepository.existsByUserIdAndCenterId(caller.getId(), request.getCenterId())) {
+            favoriteRepository.existsByUser_IdAndCenter_Id(caller.getId(), request.getCenterId())) {
             throw new IllegalArgumentException("Center already in favorites");
         }
 
@@ -89,12 +89,12 @@ public class UserFavoriteService {
 
     @Transactional
     public void deleteByCenterId(Long centerId, User caller) {
-        favoriteRepository.deleteByUserIdAndCenterId(caller.getId(), centerId);
+        favoriteRepository.deleteByUser_IdAndCenter_Id(caller.getId(), centerId);
         log.info("Deleted favorite for user id={} center id={}", caller.getId(), centerId);
     }
 
     public boolean isFavorite(Long centerId, User caller) {
-        return favoriteRepository.existsByUserIdAndCenterId(caller.getId(), centerId);
+        return favoriteRepository.existsByUser_IdAndCenter_Id(caller.getId(), centerId);
     }
 
     private UserFavorite getFavorite(Long id) {

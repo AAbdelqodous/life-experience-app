@@ -8,11 +8,11 @@ import java.util.List;
 @Repository
 public interface UserFavoriteRepository extends JpaRepository<UserFavorite, Long> {
 
-    List<UserFavorite> findByUserIdOrderByCreatedAtDesc(Integer userId);
+    List<UserFavorite> findByUser_IdOrderByCreatedAtDesc(Integer userId);
 
-    long countByUserId(Integer userId);
+    long countByUser_Id(Integer userId);
 
-    boolean existsByUserIdAndCenterId(Integer userId, Long centerId);
+    boolean existsByUser_IdAndCenter_Id(Integer userId, Long centerId);
 
-    void deleteByUserIdAndCenterId(Integer userId, Long centerId);
+    void deleteByUser_IdAndCenter_Id(Integer userId, Long centerId);
 }

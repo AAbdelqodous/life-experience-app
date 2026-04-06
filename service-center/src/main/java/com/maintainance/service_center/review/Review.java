@@ -20,7 +20,7 @@ import java.util.List;
 @NoArgsConstructor
 @Entity
 @Table(name = "review",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "center_id", "booking_id"}))
+        uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "center_id"}))
 @EntityListeners(AuditingEntityListener.class)
 public class Review {
     @Id
@@ -36,8 +36,8 @@ public class Review {
     private MaintenanceCenter center;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "booking_id", nullable = false)
-    private Booking booking;// Optional: Link to the service booking
+    @JoinColumn(name = "booking_id", nullable = true)
+    private Booking booking; // Optional: Link to the service booking
 
     @Column(nullable = false)
     private Integer rating; // 1-5 stars
