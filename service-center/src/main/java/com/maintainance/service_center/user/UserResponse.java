@@ -50,7 +50,9 @@ public class UserResponse {
     private Boolean smsNotificationsEnabled;
     
     private UserType userType;
-    
+
+    private ApprovalStatus approvalStatus;
+
     private Boolean accountLocked;
     
     private Boolean enabled;

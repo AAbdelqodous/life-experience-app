@@ -77,6 +77,10 @@ public class User implements UserDetails, Principal {
     // Firebase token for push notifications
     private String fcmToken;
 
+    // Expo push token for push notifications
+    @Column(name = "push_token")
+    private String pushToken;
+
     // Account status
     private boolean accountLocked;
     private boolean enabled;
@@ -84,8 +88,15 @@ public class User implements UserDetails, Principal {
     private LocalDateTime phoneVerifiedAt;
 
     // User type - to distinguish between customers and center owners/staff
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     private UserType userType = UserType.CUSTOMER;
+
+    // Approval status - for center owners pending admin review
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "approval_status")
+    private ApprovalStatus approvalStatus = ApprovalStatus.APPROVED;
 
     @ManyToMany(fetch = FetchType.EAGER)
     private List<Role> roles;

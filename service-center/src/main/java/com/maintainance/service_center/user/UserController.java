@@ -44,6 +44,15 @@ public class UserController {
         return ResponseEntity.ok().build();
     }
 
+    @PutMapping("/me/push-token")
+    @Operation(summary = "Update push token", description = "Update the Expo push token for push notifications")
+    public ResponseEntity<Void> updatePushToken(
+            @Valid @RequestBody PushTokenRequest request,
+            @AuthenticationPrincipal User caller) {
+        userService.updatePushToken(request.getToken(), caller);
+        return ResponseEntity.ok().build();
+    }
+
     @PutMapping("/me/location")
     @Operation(summary = "Update user location", description = "Update the user's last known location")
     public ResponseEntity<Void> updateLocation(

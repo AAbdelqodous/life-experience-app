@@ -4,10 +4,12 @@ import com.maintainance.service_center.email.EmailService;
 import com.maintainance.service_center.email.EmailTemplateName;
 import com.maintainance.service_center.role.RoleRepository;
 import com.maintainance.service_center.security.JwtService;
+import com.maintainance.service_center.user.ApprovalStatus;
 import com.maintainance.service_center.user.Token;
 import com.maintainance.service_center.user.TokenRepository;
 import com.maintainance.service_center.user.User;
 import com.maintainance.service_center.user.UserRepository;
+import com.maintainance.service_center.user.UserType;
 import jakarta.mail.MessagingException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +49,16 @@ public class AuthenticationService {
 
         var userRole = roleRepository.findByName("USER")
                 .orElseThrow(() -> new IllegalArgumentException("Role USER was not initialized"));
+
+        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
+            throw new IllegalStateException("An account with this email address already exists.");
+        }
+
+        UserType userType = request.getUserType() != null ? request.getUserType() : UserType.CUSTOMER;
+        ApprovalStatus approvalStatus = userType == UserType.CENTER_OWNER
+                ? ApprovalStatus.PENDING_APPROVAL
+                : ApprovalStatus.APPROVED;
+
         var user = User.builder()
                 .firstname(request.getFirstname())
                 .lastname(request.getLastname())
@@ -54,6 +66,8 @@ public class AuthenticationService {
                 .password(passwordEncoder.encode(request.getPassword()))
                 .accountLocked(false)
                 .enabled(false)
+                .userType(userType)
+                .approvalStatus(approvalStatus)
                 .roles(List.of(userRole))
                 .build();
 
@@ -72,8 +86,13 @@ public class AuthenticationService {
                         request.getPassword()
                 )
         );
-        
+
         var user = ((User) auth.getPrincipal());
+
+        if (user.getApprovalStatus() == ApprovalStatus.REJECTED) {
+            log.warn("Rejected center owner attempted login: {}", user.getEmail());
+            throw new IllegalStateException("Your registration has been rejected. Please contact support.");
+        }
 
         var claims = new HashMap<String, Object>();
         claims.put("fullName", user.fullName());
@@ -83,6 +102,7 @@ public class AuthenticationService {
 
         return AuthenticationResponse.builder()
                 .token(jwtToken)
+                .approvalStatus(user.getApprovalStatus())
                 .build();
     }
     

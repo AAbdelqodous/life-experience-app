@@ -1,7 +1,9 @@
 package com.maintainance.service_center.center;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.maintainance.service_center.address.AddressRequest;
+import com.maintainance.service_center.config.LocalTimeDeserializer;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -40,9 +42,11 @@ public class MaintenanceCenterRequest {
     private Double longitude;
 
     @JsonFormat(pattern = "HH:mm:ss")
+    @JsonDeserialize(using = LocalTimeDeserializer.class)
     private LocalTime openingTime;
 
     @JsonFormat(pattern = "HH:mm:ss")
+    @JsonDeserialize(using = LocalTimeDeserializer.class)
     private LocalTime closingTime;
     private Boolean isActive;
 

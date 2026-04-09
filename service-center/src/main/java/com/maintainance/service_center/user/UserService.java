@@ -19,7 +19,7 @@ public class UserService {
      * Get current user's profile
      */
     public UserResponse getMyProfile(User user) {
-        return mapToResponse(user);
+        return toResponse(user);
     }
 
     /**
@@ -88,7 +88,7 @@ public class UserService {
         User savedUser = userRepository.save(user);
         log.info("User profile updated for user ID: {}", savedUser.getId());
         
-        return mapToResponse(savedUser);
+        return toResponse(savedUser);
     }
 
     /**
@@ -99,6 +99,16 @@ public class UserService {
         user.setFcmToken(fcmToken);
         userRepository.save(user);
         log.info("FCM token updated for user ID: {}", user.getId());
+    }
+
+    /**
+     * Update user's Expo push token for push notifications
+     */
+    @Transactional
+    public void updatePushToken(String pushToken, User user) {
+        user.setPushToken(pushToken);
+        userRepository.save(user);
+        log.info("Push token updated for user ID: {}", user.getId());
     }
 
     /**
@@ -140,7 +150,7 @@ public class UserService {
         User savedUser = userRepository.save(user);
         log.info("Notification preferences updated for user ID: {}", savedUser.getId());
         
-        return mapToResponse(savedUser);
+        return toResponse(savedUser);
     }
 
     /**
@@ -152,7 +162,7 @@ public class UserService {
         User savedUser = userRepository.save(user);
         log.info("Language preference updated to {} for user ID: {}", language, savedUser.getId());
         
-        return mapToResponse(savedUser);
+        return toResponse(savedUser);
     }
 
     /**
@@ -164,7 +174,7 @@ public class UserService {
         User savedUser = userRepository.save(user);
         log.info("Profile image deleted for user ID: {}", savedUser.getId());
         
-        return mapToResponse(savedUser);
+        return toResponse(savedUser);
     }
 
     /**
@@ -188,7 +198,7 @@ public class UserService {
         
         log.info("Profile image uploaded for user ID: {}", savedUser.getId());
         
-        return mapToResponse(savedUser);
+        return toResponse(savedUser);
     }
 
     /**
@@ -207,7 +217,7 @@ public class UserService {
     /**
      * Map User entity to UserResponse DTO
      */
-    private UserResponse mapToResponse(User user) {
+    public UserResponse toResponse(User user) {
         return UserResponse.builder()
                 .id(user.getId())
                 .firstname(user.getFirstname())
@@ -227,6 +237,7 @@ public class UserService {
                 .emailNotificationsEnabled(user.getEmailNotificationsEnabled())
                 .smsNotificationsEnabled(user.getSmsNotificationsEnabled())
                 .userType(user.getUserType())
+                .approvalStatus(user.getApprovalStatus())
                 .accountLocked(user.isAccountLocked())
                 .enabled(user.isEnabled())
                 .emailVerifiedAt(user.getEmailVerifiedAt())

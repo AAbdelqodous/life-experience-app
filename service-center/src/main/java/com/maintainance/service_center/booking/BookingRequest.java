@@ -1,5 +1,8 @@
 package com.maintainance.service_center.booking;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.maintainance.service_center.config.LocalTimeDeserializer;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
@@ -20,8 +23,12 @@ public class BookingRequest {
     private LocalDate bookingDate;
 
     @NotNull(message = "Booking time is required")
+    @JsonFormat(pattern = "HH:mm:ss")
+    @JsonDeserialize(using = LocalTimeDeserializer.class)
     private LocalTime bookingTime;
 
+    @JsonFormat(pattern = "HH:mm:ss")
+    @JsonDeserialize(using = LocalTimeDeserializer.class)
     private LocalTime estimatedEndTime;
 
     @NotNull(message = "Service type is required")

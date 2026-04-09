@@ -1,5 +1,6 @@
 package com.maintainance.service_center.auth;
 
+import com.maintainance.service_center.user.UserType;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -26,4 +27,6 @@ public class RegistrationRequest {
     @NotBlank(message = "Password is mandatory")
     @Size(min = 8, message = "Password should be 8 characters long minimum")
     private String password;
+    // Optional: defaults to CUSTOMER if omitted
+    private UserType userType;
 }
