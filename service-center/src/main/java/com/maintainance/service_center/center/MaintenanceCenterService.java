@@ -303,9 +303,10 @@ public class MaintenanceCenterService {
                 .nameEn(c.getNameEn())
                 .cityAr(cityAr)
                 .cityEn(cityEn)
-                .averageRating(c.getAverageRating())
+                .averageRating(c.getAverageRating() != null? c.getAverageRating().doubleValue() : null)
                 .totalReviews(c.getTotalReviews())
                 .isVerified(c.getIsVerified())
+                .isActive(c.getIsActive())
                 .logoUrl(c.getLogoUrl())
                 .workingDays(c.getWorkingDays())
                 .build();

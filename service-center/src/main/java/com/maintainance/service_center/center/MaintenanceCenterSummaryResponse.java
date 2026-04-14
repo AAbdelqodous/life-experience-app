@@ -4,7 +4,6 @@ import com.maintainance.service_center.address.Address;
 import lombok.Builder;
 import lombok.Getter;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 @Getter
@@ -21,7 +20,7 @@ public class MaintenanceCenterSummaryResponse {
     private Address address;
     private Double latitude;
     private Double longitude;
-    private BigDecimal averageRating;
+    private Double averageRating;
     private Integer totalReviews;
     private Boolean isVerified;
     private Boolean isActive;

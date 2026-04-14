@@ -175,7 +175,7 @@ public class SearchService {
                 .nameEn(center.getNameEn())
                 .descriptionAr(center.getDescriptionAr())
                 .descriptionEn(center.getDescriptionEn())
-                .averageRating(center.getAverageRating())
+                .averageRating(center.getAverageRating() != null ? center.getAverageRating().doubleValue() : null)
                 .totalReviews(center.getTotalReviews())
                 .phone(center.getPhone())
                 .address(center.getAddress())

@@ -10,6 +10,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("reviews")
 @RequiredArgsConstructor
@@ -25,6 +27,26 @@ public class ReviewController {
             @AuthenticationPrincipal User user
     ) {
         return ResponseEntity.ok(reviewService.createReview(request, user));
+    }
+
+    @GetMapping("/center")
+    @Operation(summary = "Get reviews for the authenticated center owner's center")
+    public ResponseEntity<PageResponse<ReviewResponse>> getMyCenterReviews(
+            @AuthenticationPrincipal User user,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return ResponseEntity.ok(reviewService.getMyCenterReviews(user, page, size));
+    }
+
+    @PostMapping("/{id}/reply")
+    @Operation(summary = "Reply to a review as the center owner")
+    public ResponseEntity<ReviewResponse> replyToReview(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(reviewService.replyToReview(id, body.get("reply"), user));
     }
 
     @GetMapping("/center/stats")
