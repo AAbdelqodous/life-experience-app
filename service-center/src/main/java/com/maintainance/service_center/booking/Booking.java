@@ -114,6 +114,9 @@ public class Booking {
     private Boolean reminderSent;
     private LocalDateTime reminderSentAt;
 
+    @Column(length = 50)
+    private String currentWorkStage;
+
     @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

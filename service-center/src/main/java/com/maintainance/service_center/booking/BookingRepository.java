@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -49,4 +51,20 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     @Query("SELECT COALESCE(SUM(b.finalCost), 0) FROM Booking b WHERE b.customer.id = :customerId AND b.bookingStatus = 'COMPLETED'")
     Double sumFinalCostByCustomerId(@Param("customerId") Integer customerId);
+
+    // Analytics methods
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.center.id = :centerId AND b.createdAt BETWEEN :startDate AND :endDate")
+    long countByCenterIdAndDateRange(@Param("centerId") Long centerId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.center.id = :centerId AND b.bookingStatus = :status AND b.createdAt BETWEEN :startDate AND :endDate")
+    long countByCenterIdAndStatusAndDateRange(@Param("centerId") Long centerId, @Param("status") BookingStatus status, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+
+    @Query("SELECT COALESCE(SUM(b.finalCost), 0) FROM Booking b WHERE b.center.id = :centerId AND b.bookingStatus = :status AND b.createdAt BETWEEN :startDate AND :endDate")
+    BigDecimal sumFinalCostByCenterAndDateRange(@Param("centerId") Long centerId, @Param("status") BookingStatus status, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+
+    @Query("SELECT b.serviceType, COUNT(b), COALESCE(SUM(b.finalCost), 0) FROM Booking b WHERE b.center.id = :centerId AND b.bookingStatus = :status AND b.createdAt BETWEEN :startDate AND :endDate GROUP BY b.serviceType")
+    List<Object[]> countCompletedBookingsByServiceTypeAndDateRange(@Param("centerId") Long centerId, @Param("status") BookingStatus status, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+
+    @Query("SELECT HOUR(b.createdAt), COUNT(b) FROM Booking b WHERE b.center.id = :centerId AND b.createdAt BETWEEN :startDate AND :endDate GROUP BY HOUR(b.createdAt)")
+    List<Object[]> countBookingsByHourAndDateRange(@Param("centerId") Long centerId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
 }

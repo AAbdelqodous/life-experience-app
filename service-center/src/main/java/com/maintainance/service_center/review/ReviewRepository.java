@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Repository
@@ -28,4 +29,11 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     Optional<Review> findByReviewerIdAndCenterId(Integer reviewerId, Long centerId);
 
     Page<Review> findByReviewerId(Integer reviewerId, Pageable pageable);
+
+    // Analytics methods
+    @Query("SELECT AVG(r.rating) FROM Review r WHERE r.center.id = :centerId AND r.createdAt BETWEEN :startDate AND :endDate")
+    Double getAverageRatingByCenterAndDateRange(@Param("centerId") Long centerId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+
+    @Query("SELECT COUNT(r) FROM Review r WHERE r.center.id = :centerId AND r.rating = :rating AND r.createdAt BETWEEN :startDate AND :endDate")
+    long countByCenterAndRatingAndDateRange(@Param("centerId") Long centerId, @Param("rating") int rating, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
 }
