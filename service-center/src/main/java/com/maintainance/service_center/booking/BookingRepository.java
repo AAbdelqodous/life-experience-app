@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
@@ -37,8 +38,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @Query("SELECT COUNT(b) FROM Booking b WHERE b.center.owner.id = :ownerId AND b.bookingStatus = :status")
     Long countByOwnerIdAndStatus(@Param("ownerId") Integer ownerId, @Param("status") BookingStatus status);
 
-    @Query("SELECT COALESCE(SUM(b.finalCost), 0) FROM Booking b WHERE b.center.owner.id = :ownerId AND b.bookingStatus = 'COMPLETED'")
-    Double sumFinalCostByOwnerId(@Param("ownerId") Integer ownerId);
+    @Query("SELECT SUM(b.finalCost) FROM Booking b WHERE b.center.owner.id = :ownerId AND b.bookingStatus = 'COMPLETED'")
+    BigDecimal sumFinalCostByOwnerId(@Param("ownerId") Integer ownerId);
 
     @Query("SELECT COUNT(b) FROM Booking b WHERE b.center.owner.id = :ownerId")
     Long countByOwnerId(@Param("ownerId") Integer ownerId);
@@ -49,8 +50,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @Query("SELECT COUNT(b) FROM Booking b WHERE b.customer.id = :customerId AND b.bookingStatus = :status")
     Long countByCustomerIdAndStatus(@Param("customerId") Integer customerId, @Param("status") BookingStatus status);
 
-    @Query("SELECT COALESCE(SUM(b.finalCost), 0) FROM Booking b WHERE b.customer.id = :customerId AND b.bookingStatus = 'COMPLETED'")
-    Double sumFinalCostByCustomerId(@Param("customerId") Integer customerId);
+    @Query("SELECT SUM(b.finalCost) FROM Booking b WHERE b.customer.id = :customerId AND b.bookingStatus = 'COMPLETED'")
+    BigDecimal sumFinalCostByCustomerId(@Param("customerId") Integer customerId);
 
     // Analytics methods
     @Query("SELECT COUNT(b) FROM Booking b WHERE b.center.id = :centerId AND b.createdAt BETWEEN :startDate AND :endDate")
@@ -65,6 +66,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @Query("SELECT b.serviceType, COUNT(b), COALESCE(SUM(b.finalCost), 0) FROM Booking b WHERE b.center.id = :centerId AND b.bookingStatus = :status AND b.createdAt BETWEEN :startDate AND :endDate GROUP BY b.serviceType")
     List<Object[]> countCompletedBookingsByServiceTypeAndDateRange(@Param("centerId") Long centerId, @Param("status") BookingStatus status, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
 
-    @Query("SELECT HOUR(b.createdAt), COUNT(b) FROM Booking b WHERE b.center.id = :centerId AND b.createdAt BETWEEN :startDate AND :endDate GROUP BY HOUR(b.createdAt)")
+    @Query(value = "SELECT EXTRACT(HOUR FROM created_at)::integer AS hour, COUNT(*) AS count " +
+                   "FROM booking WHERE center_id = :centerId AND created_at BETWEEN :startDate AND :endDate " +
+                   "GROUP BY EXTRACT(HOUR FROM created_at)::integer ORDER BY hour",
+           nativeQuery = true)
     List<Object[]> countBookingsByHourAndDateRange(@Param("centerId") Long centerId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
 }

@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
@@ -50,7 +51,7 @@ public class BookingRequest {
 
     private List<String> problemImageUrls;
 
-    private Double estimatedCost;
+    private BigDecimal estimatedCost;
 
     @NotBlank(message = "Customer phone is required")
     private String customerPhone;

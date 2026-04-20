@@ -4,6 +4,7 @@ import com.maintainance.service_center.config.FileStorageService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -14,6 +15,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
+    private final PasswordEncoder passwordEncoder;
 
     /**
      * Get current user's profile
@@ -212,6 +214,37 @@ public class UserService {
                 .ownedCenters(user.getOwnedCenters() != null ? user.getOwnedCenters().size() : 0)
                 .favorites(user.getFavorites() != null ? user.getFavorites().size() : 0)
                 .build();
+    }
+
+    /**
+     * Change user password
+     */
+    @Transactional
+    public void changePassword(ChangePasswordRequest request, User user) {
+        // Validate current password matches stored password
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+            log.warn("Failed password change attempt for user ID: {} - incorrect current password", user.getId());
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+
+        // Validate new password is different from current password
+        if (passwordEncoder.matches(request.getNewPassword(), user.getPassword())) {
+            log.warn("Failed password change attempt for user ID: {} - new password same as current", user.getId());
+            throw new IllegalArgumentException("New password must be different from current password");
+        }
+
+        // Validate new password matches confirmation password
+        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
+            log.warn("Failed password change attempt for user ID: {} - passwords do not match", user.getId());
+            throw new IllegalArgumentException("New password and confirmation password do not match");
+        }
+
+        // Encode and save new password
+        String encodedNewPassword = passwordEncoder.encode(request.getNewPassword());
+        user.setPassword(encodedNewPassword);
+        userRepository.save(user);
+
+        log.info("Password changed successfully for user ID: {}", user.getId());
     }
 
     /**

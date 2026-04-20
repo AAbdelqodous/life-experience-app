@@ -3,6 +3,8 @@ package com.maintainance.service_center.booking;
 import lombok.Builder;
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 @Data
 @Builder
 public class BookingStatsResponse {
@@ -14,5 +16,5 @@ public class BookingStatsResponse {
     private long cancelled;
     private long noShow;
     private long rescheduled;
-    private double totalRevenue;
+    private BigDecimal totalRevenue;
 }

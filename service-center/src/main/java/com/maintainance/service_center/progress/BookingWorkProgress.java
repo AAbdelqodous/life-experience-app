@@ -25,8 +25,9 @@ public class BookingWorkProgress {
     @JoinColumn(name = "booking_id", nullable = false)
     private Booking booking;
     
+    @Enumerated(EnumType.STRING)
     @Column(length = 50, nullable = false)
-    private String stage;
+    private WorkStage stage;
     
     @Column(length = 500)
     private String notes;

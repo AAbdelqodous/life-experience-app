@@ -160,7 +160,7 @@ public class AnalyticsService {
         List<RevenueByCategoryEntry> entries = new ArrayList<>();
         for (Object[] result : results) {
             String serviceType = (String) result[0];
-            Long count = ((Number) result[1]).long();
+            Long count = ((Number) result[1]).longValue();
             BigDecimal revenue = result[2] != null ? (BigDecimal) result[2] : BigDecimal.ZERO;
             
             entries.add(RevenueByCategoryEntry.builder()
@@ -240,7 +240,7 @@ public class AnalyticsService {
         LocalDate startDate = dateRange[0];
         LocalDate endDate = dateRange[1];
         
-        MaintenanceCenter center = getCenterRepository.findFirstByOwnerId(owner.getId())
+        MaintenanceCenter center = centerRepository.findFirstByOwnerId(owner.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Center not found for owner"));
         
         List<PeakHourEntry> peakHours = new ArrayList<>();
@@ -257,7 +257,7 @@ public class AnalyticsService {
         
         for (Object[] result : results) {
             Integer hour = ((Number) result[0]).intValue();
-            Long count = ((Number) result[1]).long();
+            Long count = ((Number) result[1]).longValue();
             hourCounts.put(hour, count);
         }
         

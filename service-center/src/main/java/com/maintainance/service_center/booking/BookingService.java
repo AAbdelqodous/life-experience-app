@@ -13,6 +13,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -30,9 +31,11 @@ public class BookingService {
                 .map(this::toResponse);
     }
 
-    public Page<BookingResponse> findByCenter(Long centerId, Pageable pageable) {
-        if (!centerRepository.existsById(centerId)) {
-            throw new EntityNotFoundException("Center not found with id: " + centerId);
+    public Page<BookingResponse> findByCenter(Long centerId, User caller, Pageable pageable) {
+        MaintenanceCenter center = centerRepository.findById(centerId)
+                .orElseThrow(() -> new EntityNotFoundException("Center not found with id: " + centerId));
+        if (center.getOwner() == null || !center.getOwner().getId().equals(caller.getId())) {
+            throw new AccessDeniedException("You do not have permission to view bookings for this center");
         }
         return bookingRepository.findByCenter_IdOrderByCreatedAtDesc(centerId, pageable)
                 .map(this::toResponse);
@@ -42,8 +45,10 @@ public class BookingService {
         return toResponse(getBookingByNumber(bookingNumber));
     }
 
-    public BookingResponse findById(Long id) {
-        return toResponse(getBooking(id));
+    public BookingResponse findById(Long id, User caller) {
+        Booking booking = getBooking(id);
+        checkOwnershipOrAccess(booking, caller);
+        return toResponse(booking);
     }
 
     @Transactional
@@ -140,7 +145,7 @@ public class BookingService {
     @Transactional
     public BookingResponse confirm(Long id, User caller) {
         Booking booking = getBooking(id);
-        checkOwnershipOrAccess(booking, caller);
+        checkCenterAccess(booking, caller);
 
         if (booking.getBookingStatus() != BookingStatus.PENDING) {
             throw new IllegalArgumentException("Can only confirm pending bookings");
@@ -176,14 +181,20 @@ public class BookingService {
             throw new IllegalArgumentException("Can only complete in-progress bookings");
         }
 
+        PaymentStatus resolvedPaymentStatus = request.getPaymentStatus() != null
+                ? request.getPaymentStatus()
+                : PaymentStatus.PAID;
+
         booking.setBookingStatus(BookingStatus.COMPLETED);
         booking.setCompletedAt(LocalDateTime.now());
         booking.setCompletionNotes(request.getCompletionNotes());
         booking.setFinalCost(request.getFinalCost());
         booking.setCostNotes(request.getCostNotes());
         booking.setCompletionImageUrls(request.getCompletionImageUrls() != null ? request.getCompletionImageUrls() : List.of());
-        booking.setPaymentStatus(PaymentStatus.PAID);
-        booking.setPaidAt(LocalDateTime.now());
+        booking.setPaymentStatus(resolvedPaymentStatus);
+        if (resolvedPaymentStatus == PaymentStatus.PAID) {
+            booking.setPaidAt(LocalDateTime.now());
+        }
 
         bookingRepository.save(booking);
         log.info("Completed booking id={}", id);
@@ -222,7 +233,7 @@ public class BookingService {
                 .cancelled(bookingRepository.countByCustomerIdAndStatus(customerId, BookingStatus.CANCELLED))
                 .noShow(bookingRepository.countByCustomerIdAndStatus(customerId, BookingStatus.NO_SHOW))
                 .rescheduled(bookingRepository.countByCustomerIdAndStatus(customerId, BookingStatus.RESCHEDULED))
-                .totalRevenue(bookingRepository.sumFinalCostByCustomerId(customerId))
+                .totalRevenue(nullSafe(bookingRepository.sumFinalCostByCustomerId(customerId)))
                 .build();
     }
 
@@ -246,18 +257,16 @@ public class BookingService {
                 .cancelled(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.CANCELLED))
                 .noShow(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.NO_SHOW))
                 .rescheduled(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.RESCHEDULED))
-                .totalRevenue(bookingRepository.sumFinalCostByOwnerId(ownerId))
+                .totalRevenue(nullSafe(bookingRepository.sumFinalCostByOwnerId(ownerId)))
                 .build();
     }
 
+    private BigDecimal nullSafe(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
+    }
+
     public List<BookingResponse> getMyBookings(User customer, BookingStatus status) {
-        if (status != null) {
-            return bookingRepository.findByCustomerIdAndStatuses(customer.getId(), List.of(status))
-                    .stream()
-                    .map(this::toResponse)
-                    .toList();
-        }
-        return bookingRepository.findByCustomer_IdOrderByCreatedAtDesc(customer.getId(), org.springframework.data.domain.Pageable.unpaged())
+        return bookingRepository.findByCustomerIdAndStatuses(customer.getId(), List.of(status))
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -283,13 +292,18 @@ public class BookingService {
     }
 
     private void checkCenterAccess(Booking booking, User caller) {
-        if (!caller.getId().equals(booking.getCenter().getOwner().getId())) {
-            throw new IllegalArgumentException("You do not have permission to modify this booking");
+        if (booking.getCenter().getOwner() == null ||
+                !caller.getId().equals(booking.getCenter().getOwner().getId())) {
+            throw new AccessDeniedException("You do not have permission to modify this booking");
         }
     }
 
     private String generateBookingNumber() {
-        return "BK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        String number;
+        do {
+            number = "BK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        } while (bookingRepository.existsByBookingNumber(number));
+        return number;
     }
 
     private BookingResponse toResponse(Booking booking) {
@@ -336,6 +350,7 @@ public class BookingService {
                 .isUrgent(booking.getIsUrgent())
                 .pickupRequired(booking.getPickupRequired())
                 .pickupAddress(booking.getPickupAddress())
+                .currentWorkStage(booking.getCurrentWorkStage())
                 .createdAt(booking.getCreatedAt())
                 .updatedAt(booking.getUpdatedAt())
                 .build();

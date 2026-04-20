@@ -1,9 +1,11 @@
 package com.maintainance.service_center.booking;
 
 import com.maintainance.service_center.address.Address;
+import com.maintainance.service_center.progress.WorkStage;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -37,8 +39,8 @@ public class BookingResponse {
     private String deviceYear;
     private String deviceSerial;
     private List<String> problemImageUrls;
-    private Double estimatedCost;
-    private Double finalCost;
+    private BigDecimal estimatedCost;
+    private BigDecimal finalCost;
     private String costNotes;
     private PaymentMethod paymentMethod;
     private PaymentStatus paymentStatus;
@@ -54,6 +56,7 @@ public class BookingResponse {
     private Boolean isUrgent;
     private Boolean pickupRequired;
     private String pickupAddress;
+    private WorkStage currentWorkStage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

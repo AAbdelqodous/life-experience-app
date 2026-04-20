@@ -1,6 +1,7 @@
 package com.maintainance.service_center.booking;
 
 import com.maintainance.service_center.center.MaintenanceCenter;
+import com.maintainance.service_center.progress.WorkStage;
 import com.maintainance.service_center.review.Review;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.*;
@@ -9,6 +10,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -74,8 +76,8 @@ public class Booking {
     @CollectionTable(name = "booking_problem_images")
     private List<String> problemImageUrls = new ArrayList<>();
 
-    private Double estimatedCost;
-    private Double finalCost;
+    private BigDecimal estimatedCost;
+    private BigDecimal finalCost;
     private String costNotes;
 
     @Enumerated(EnumType.STRING)
@@ -114,8 +116,9 @@ public class Booking {
     private Boolean reminderSent;
     private LocalDateTime reminderSentAt;
 
+    @Enumerated(EnumType.STRING)
     @Column(length = 50)
-    private String currentWorkStage;
+    private WorkStage currentWorkStage;
 
     @CreatedDate
     @Column(nullable = false, updatable = false)

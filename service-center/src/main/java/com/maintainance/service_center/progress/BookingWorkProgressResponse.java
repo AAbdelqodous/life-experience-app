@@ -15,10 +15,9 @@ import java.util.List;
 public class BookingWorkProgressResponse {
     
     private Long id;
-    private String stage;
+    private WorkStage stage;
     private String notes;
     private String notesAr;
-    private String internalNotes;
     private Integer estimatedMinutesRemaining;
     private List<BookingMediaResponse> photos;
     private LocalDateTime createdAt;

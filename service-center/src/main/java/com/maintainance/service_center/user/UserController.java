@@ -105,4 +105,13 @@ public class UserController {
         UserStatisticsResponse response = userService.getUserStatistics(caller);
         return ResponseEntity.ok(response);
     }
+
+    @PostMapping("/me/change-password")
+    @Operation(summary = "Change password", description = "Change the password for the currently authenticated user")
+    public ResponseEntity<Void> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request,
+            @AuthenticationPrincipal User caller) {
+        userService.changePassword(request, caller);
+        return ResponseEntity.ok().build();
+    }
 }
