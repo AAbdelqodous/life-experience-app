@@ -1,28 +1,26 @@
 package com.maintainance.service_center.analytics;
 
-import com.maintainance.service_center.booking.Booking;
 import com.maintainance.service_center.booking.BookingRepository;
 import com.maintainance.service_center.booking.BookingStatus;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
-import com.maintainance.service_center.review.Review;
 import com.maintainance.service_center.review.ReviewRepository;
 import com.maintainance.service_center.user.User;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.Query;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.DayOfWeek;
+import java.time.temporal.ChronoUnit;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.IsoFields;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -32,17 +30,8 @@ public class AnalyticsService {
     private final MaintenanceCenterRepository centerRepository;
     private final BookingRepository bookingRepository;
     private final ReviewRepository reviewRepository;
-    private final EntityManager entityManager;
     
-    private static final String THIS_WEEK = "THIS_WEEK";
-    private static final String THIS_MONTH = "THIS_MONTH";
-    private static final String LAST_3_MONTHS = "LAST_3_MONTHS";
-    
-    public PerformanceSummaryResponse getPerformanceSummary(User owner, String period) {
-        LocalDate[] dateRange = getDateRange(period);
-        LocalDate startDate = dateRange[0];
-        LocalDate endDate = dateRange[1];
-        
+    public PerformanceSummaryResponse getPerformanceSummary(User owner, LocalDate startDate, LocalDate endDate) {
         MaintenanceCenter center = getCenterForOwner(owner);
         
         // Count total bookings in date range
@@ -81,75 +70,62 @@ public class AnalyticsService {
                 .build();
     }
     
-    public List<BookingTrendPoint> getBookingTrends(User owner, String period) {
-        LocalDate[] dateRange = getDateRange(period);
-        LocalDate startDate = dateRange[0];
-        LocalDate endDate = dateRange[1];
-        
+    public List<BookingTrendPoint> getBookingTrends(User owner, LocalDate startDate, LocalDate endDate, String granularity) {
         MaintenanceCenter center = getCenterForOwner(owner);
-        
+
         List<BookingTrendPoint> trendPoints = new ArrayList<>();
-        
-        if (THIS_WEEK.equals(period)) {
-            // Group by day of week (7 points)
-            for (int i = 0; i < 7; i++) {
-                LocalDate day = startDate.plusDays(i);
-                if (day.isAfter(endDate)) break;
-                
+
+        if ("DAILY".equalsIgnoreCase(granularity)) {
+            // Group by individual day
+            LocalDate day = startDate;
+            while (!day.isAfter(endDate)) {
                 long completedCount = bookingRepository.countByCenterIdAndStatusAndDateRange(
-                        center.getId(), BookingStatus.COMPLETED, 
+                        center.getId(), BookingStatus.COMPLETED,
                         day.atStartOfDay(), day.atTime(LocalTime.MAX));
-                
+
                 long cancelledCount = bookingRepository.countByCenterIdAndStatusAndDateRange(
-                        center.getId(), BookingStatus.CANCELLED, 
+                        center.getId(), BookingStatus.CANCELLED,
                         day.atStartOfDay(), day.atTime(LocalTime.MAX));
-                
+
                 trendPoints.add(BookingTrendPoint.builder()
                         .periodLabel(day.toString())
                         .completedCount(completedCount)
                         .cancelledCount(cancelledCount)
                         .build());
+
+                day = day.plusDays(1);
             }
         } else {
-            // THIS_MONTH or LAST_3_MONTHS: group by ISO week
+            // Default: group by ISO week
             LocalDate current = startDate;
-            int weekNumber = 1;
-            
             while (!current.isAfter(endDate)) {
                 LocalDate weekEnd = current.with(TemporalAdjusters.next(DayOfWeek.SUNDAY));
                 if (weekEnd.isAfter(endDate)) {
                     weekEnd = endDate;
                 }
-                
+
                 long completedCount = bookingRepository.countByCenterIdAndStatusAndDateRange(
-                        center.getId(), BookingStatus.COMPLETED, 
+                        center.getId(), BookingStatus.COMPLETED,
                         current.atStartOfDay(), weekEnd.atTime(LocalTime.MAX));
-                
+
                 long cancelledCount = bookingRepository.countByCenterIdAndStatusAndDateRange(
-                        center.getId(), BookingStatus.CANCELLED, 
+                        center.getId(), BookingStatus.CANCELLED,
                         current.atStartOfDay(), weekEnd.atTime(LocalTime.MAX));
-                
-                String weekLabel = getWeekLabel(current);
-                
+
                 trendPoints.add(BookingTrendPoint.builder()
-                        .periodLabel(weekLabel)
+                        .periodLabel(getWeekLabel(current))
                         .completedCount(completedCount)
                         .cancelledCount(cancelledCount)
                         .build());
-                
+
                 current = weekEnd.plusDays(1);
-                weekNumber++;
             }
         }
-        
+
         return trendPoints;
     }
     
-    public List<RevenueByCategoryEntry> getRevenueByCategory(User owner, String period) {
-        LocalDate[] dateRange = getDateRange(period);
-        LocalDate startDate = dateRange[0];
-        LocalDate endDate = dateRange[1];
-        
+    public List<RevenueByCategoryEntry> getRevenueByCategory(User owner, LocalDate startDate, LocalDate endDate) {
         MaintenanceCenter center = getCenterForOwner(owner);
         
         // Group completed bookings by service type
@@ -178,11 +154,7 @@ public class AnalyticsService {
         return entries;
     }
     
-    public CustomerSatisfactionResponse getCustomerSatisfaction(User owner, String period) {
-        LocalDate[] dateRange = getDateRange(period);
-        LocalDate startDate = dateRange[0];
-        LocalDate endDate = dateRange[1];
-        
+    public CustomerSatisfactionResponse getCustomerSatisfaction(User owner, LocalDate startDate, LocalDate endDate) {
         MaintenanceCenter center = getCenterForOwner(owner);
         
         // Get average rating for current period
@@ -211,16 +183,16 @@ public class AnalyticsService {
                 .fiveStar(fiveStar)
                 .build();
         
-        // Calculate trend indicator (current avg - previous period avg)
+        // Calculate trend indicator: compare against the equivalent preceding period
         Double trendIndicator = null;
         if (currentAvgRating != null) {
-            LocalDate[] previousRange = getPreviousDateRange(period);
-            LocalDate prevStartDate = previousRange[0];
-            LocalDate prevEndDate = previousRange[1];
-            
+            long daysBetween = ChronoUnit.DAYS.between(startDate, endDate);
+            LocalDate prevEnd = startDate.minusDays(1);
+            LocalDate prevStart = prevEnd.minusDays(daysBetween);
+
             Double prevAvgRating = reviewRepository.getAverageRatingByCenterAndDateRange(
-                    center.getId(), prevStartDate.atStartOfDay(), prevEndDate.atTime(LocalTime.MAX));
-            
+                    center.getId(), prevStart.atStartOfDay(), prevEnd.atTime(LocalTime.MAX));
+
             if (prevAvgRating != null) {
                 trendIndicator = currentAvgRating - prevAvgRating;
                 trendIndicator = Math.round(trendIndicator * 100.0) / 100.0;
@@ -235,11 +207,7 @@ public class AnalyticsService {
                 .build();
     }
     
-    public List<PeakHourEntry> getPeakHours(User owner, String period) {
-        LocalDate[] dateRange = getDateRange(period);
-        LocalDate startDate = dateRange[0];
-        LocalDate endDate = dateRange[1];
-        
+    public List<PeakHourEntry> getPeakHours(User owner, LocalDate startDate, LocalDate endDate) {
         MaintenanceCenter center = centerRepository.findFirstByOwnerId(owner.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Center not found for owner"));
         
@@ -250,7 +218,7 @@ public class AnalyticsService {
                 center.getId(), startDate.atStartOfDay(), endDate.atTime(LocalTime.MAX));
         
         // Create a map for easy lookup
-        java.util.Map<Integer, Long> hourCounts = new java.util.HashMap<>();
+        Map<Integer, Long> hourCounts = new HashMap<>();
         for (int i = 0; i < 24; i++) {
             hourCounts.put(i, 0L);
         }
@@ -272,15 +240,15 @@ public class AnalyticsService {
         return peakHours;
     }
     
-    public AnalyticsSummaryResponse getAnalyticsSummary(User owner, String period) {
-        PerformanceSummaryResponse performance = getPerformanceSummary(owner, period);
-        List<BookingTrendPoint> bookingTrends = getBookingTrends(owner, period);
-        List<RevenueByCategoryEntry> revenueByCategory = getRevenueByCategory(owner, period);
-        CustomerSatisfactionResponse customerSatisfaction = getCustomerSatisfaction(owner, period);
-        List<PeakHourEntry> peakHours = getPeakHours(owner, period);
-        
+    public AnalyticsSummaryResponse getAnalyticsSummary(User owner, LocalDate startDate, LocalDate endDate, String granularity) {
+        PerformanceSummaryResponse performance = getPerformanceSummary(owner, startDate, endDate);
+        List<BookingTrendPoint> bookingTrends = getBookingTrends(owner, startDate, endDate, granularity);
+        List<RevenueByCategoryEntry> revenueByCategory = getRevenueByCategory(owner, startDate, endDate);
+        CustomerSatisfactionResponse customerSatisfaction = getCustomerSatisfaction(owner, startDate, endDate);
+        List<PeakHourEntry> peakHours = getPeakHours(owner, startDate, endDate);
+
         return AnalyticsSummaryResponse.builder()
-                .period(period)
+                .period(startDate + " to " + endDate)
                 .performance(performance)
                 .bookingTrends(bookingTrends)
                 .revenueByCategory(revenueByCategory)
@@ -294,37 +262,8 @@ public class AnalyticsService {
                 .orElseThrow(() -> new IllegalArgumentException("Center not found for owner"));
     }
     
-    private LocalDate[] getDateRange(String period) {
-        LocalDate today = LocalDate.now();
-        LocalDate startDate;
-        LocalDate endDate = today;
-        
-        if (period == null || THIS_MONTH.equals(period)) {
-            startDate = today.withDayOfMonth(1);
-        } else if (THIS_WEEK.equals(period)) {
-            startDate = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-        } else if (LAST_3_MONTHS.equals(period)) {
-            startDate = today.minusMonths(3);
-        } else {
-            throw new IllegalArgumentException("Invalid period: " + period);
-        }
-        
-        return new LocalDate[]{startDate, endDate};
-    }
-    
-    private LocalDate[] getPreviousDateRange(String period) {
-        LocalDate[] currentRange = getDateRange(period);
-        LocalDate currentStart = currentRange[0];
-        long daysBetween = java.time.temporal.ChronoUnit.DAYS.between(currentStart, currentRange[1]);
-        
-        LocalDate prevEnd = currentStart.minusDays(1);
-        LocalDate prevStart = prevEnd.minusDays(daysBetween);
-        
-        return new LocalDate[]{prevStart, prevEnd};
-    }
-    
     private String getWeekLabel(LocalDate date) {
-        int weekNumber = date.get(java.time.temporal.WeekFields.ISO_WEEK_OF_WEEK_BASE_YEAR).get(date);
+        int weekNumber = date.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);
         String month = date.getMonth().toString().substring(0, 3);
         return month + " W" + weekNumber;
     }

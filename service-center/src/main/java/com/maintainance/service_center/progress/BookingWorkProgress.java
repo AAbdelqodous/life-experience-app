@@ -3,10 +3,10 @@ package com.maintainance.service_center.progress;
 import com.maintainance.service_center.booking.Booking;
 import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Getter
 @Setter
@@ -15,6 +15,7 @@ import java.util.List;
 @NoArgsConstructor
 @Entity
 @Table(name = "booking_work_progress")
+@EntityListeners(AuditingEntityListener.class)
 public class BookingWorkProgress {
     
     @Id
@@ -38,14 +39,16 @@ public class BookingWorkProgress {
     @Column(length = 500)
     private String internalNotes;
     
+    private String photoUrl;
+    
+    private String videoUrl;
+    
     private Integer estimatedMinutesRemaining;
     
-    @Column(nullable = false)
+    @CreatedDate
+    @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
     
     @Column(length = 255, nullable = false)
     private String createdByName;
-    
-    @OneToMany(mappedBy = "progress", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<BookingMedia> media = new ArrayList<>();
 }

@@ -24,6 +24,8 @@ public interface MaintenanceCenterRepository extends JpaRepository<MaintenanceCe
 
     java.util.Optional<MaintenanceCenter> findFirstByOwnerId(Integer ownerId);
 
+    java.util.Optional<MaintenanceCenter> findFirstByOwnerEmail(String email);
+
     boolean existsByEmail(String email);
 
     // Search methods for advanced filtering

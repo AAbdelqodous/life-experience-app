@@ -118,7 +118,7 @@ public class Booking {
 
     @Enumerated(EnumType.STRING)
     @Column(length = 50)
-    private WorkStage currentWorkStage;
+    private WorkStage workStage;
 
     @CreatedDate
     @Column(nullable = false, updatable = false)

@@ -14,4 +14,11 @@ public interface BookingMediaRepository extends JpaRepository<BookingMedia, Long
      * @return list of booking media visible to customers
      */
     List<BookingMedia> findByBookingIdAndIsVisibleToCustomerTrue(Long bookingId);
+    
+    /**
+     * Find all media for a booking
+     * @param bookingId the booking ID
+     * @return list of all booking media for the booking
+     */
+    List<BookingMedia> findByBookingIdOrderByCreatedAtDesc(Long bookingId);
 }

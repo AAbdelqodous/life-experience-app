@@ -31,11 +31,15 @@ public class BookingService {
                 .map(this::toResponse);
     }
 
-    public Page<BookingResponse> findByCenter(Long centerId, User caller, Pageable pageable) {
+    public Page<BookingResponse> findByCenter(Long centerId, BookingStatus status, User caller, Pageable pageable) {
         MaintenanceCenter center = centerRepository.findById(centerId)
                 .orElseThrow(() -> new EntityNotFoundException("Center not found with id: " + centerId));
         if (center.getOwner() == null || !center.getOwner().getId().equals(caller.getId())) {
             throw new AccessDeniedException("You do not have permission to view bookings for this center");
+        }
+        if (status != null) {
+            return bookingRepository.findByCenterIdAndStatusesPageable(centerId, List.of(status), pageable)
+                    .map(this::toResponse);
         }
         return bookingRepository.findByCenter_IdOrderByCreatedAtDesc(centerId, pageable)
                 .map(this::toResponse);
@@ -350,7 +354,7 @@ public class BookingService {
                 .isUrgent(booking.getIsUrgent())
                 .pickupRequired(booking.getPickupRequired())
                 .pickupAddress(booking.getPickupAddress())
-                .currentWorkStage(booking.getCurrentWorkStage())
+                .currentWorkStage(booking.getWorkStage())
                 .createdAt(booking.getCreatedAt())
                 .updatedAt(booking.getUpdatedAt())
                 .build();

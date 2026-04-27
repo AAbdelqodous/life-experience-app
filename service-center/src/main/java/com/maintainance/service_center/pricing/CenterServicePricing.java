@@ -3,7 +3,11 @@ package com.maintainance.service_center.pricing;
 import com.maintainance.service_center.booking.ServiceType;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import jakarta.persistence.*;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -14,11 +18,11 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Builder
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
 @Entity
-@Table(name = "center_service_pricing", 
-       uniqueConstraints = @UniqueConstraint(columnNames = {"center_id", "serviceType"}))
+@Table(name = "center_service_pricing",
+       uniqueConstraints = @UniqueConstraint(columnNames = {"center_id", "service_type", "service_name_en"}))
 @EntityListeners(AuditingEntityListener.class)
 public class CenterServicePricing {
     
@@ -40,28 +44,25 @@ public class CenterServicePricing {
     @Column(nullable = false)
     private String serviceNameEn;
     
-    @Column(nullable = false, precision = 10, scale = 3)
+    @Column(precision = 10, scale = 3, nullable = false)
     private BigDecimal minPrice;
     
-    @Column(nullable = false, precision = 10, scale = 3)
+    @Column(precision = 10, scale = 3, nullable = false)
     private BigDecimal maxPrice;
     
     private Integer typicalDurationMinutes;
     
-    @Column(length = 1000)
     private String descriptionAr;
     
-    @Column(length = 1000)
     private String descriptionEn;
     
     @Column(nullable = false)
-    private Boolean isActive = true;
+    private boolean isActive = true;
     
     @CreatedDate
-    @Column(nullable = false, updatable = false)
+    @Column(updatable = false)
     private LocalDateTime createdAt;
     
     @LastModifiedDate
-    @Column(insertable = false)
     private LocalDateTime updatedAt;
 }

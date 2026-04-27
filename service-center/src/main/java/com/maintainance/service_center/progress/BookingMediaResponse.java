@@ -14,8 +14,9 @@ import java.time.LocalDateTime;
 public class BookingMediaResponse {
     
     private Long id;
+    private Long bookingId;
     private MediaType mediaType;
-    private String category;
+    private MediaCategory category;
     private String url;
     private String thumbnailUrl;
     private String caption;

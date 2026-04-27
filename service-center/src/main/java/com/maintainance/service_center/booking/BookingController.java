@@ -56,9 +56,10 @@ public class BookingController {
     public ResponseEntity<Page<BookingResponse>> findByCenter(
             @PathVariable Long centerId,
             @AuthenticationPrincipal User caller,
+            @RequestParam(required = false) BookingStatus status,
             @PageableDefault(size = 20, sort = "createdAt") Pageable pageable
     ) {
-        return ResponseEntity.ok(service.findByCenter(centerId, caller, pageable));
+        return ResponseEntity.ok(service.findByCenter(centerId, status, caller, pageable));
     }
 
     @GetMapping("/stats")

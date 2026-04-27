@@ -9,12 +9,14 @@ import java.util.Optional;
 
 @Repository
 public interface CenterServicePricingRepository extends JpaRepository<CenterServicePricing, Long> {
-    
+
     List<CenterServicePricing> findByCenterIdOrderByCreatedAtDesc(Long centerId);
-    
-    Optional<CenterServicePricing> findByCenterIdAndId(Long centerId, Long id);
-    
-    boolean existsByCenterIdAndServiceTypeAndIdNot(Long centerId, ServiceType serviceType, Long excludeId);
-    
-    boolean existsByCenterIdAndServiceType(Long centerId, ServiceType serviceType);
+
+    List<CenterServicePricing> findByCenterIdAndIsActiveTrue(Long centerId);
+
+    Optional<CenterServicePricing> findByIdAndCenterId(Long id, Long centerId);
+
+    boolean existsByCenterIdAndServiceTypeAndServiceNameEn(Long centerId, ServiceType serviceType, String serviceNameEn);
+
+    boolean existsByCenterIdAndServiceTypeAndServiceNameEnAndIdNot(Long centerId, ServiceType serviceType, String serviceNameEn, Long id);
 }

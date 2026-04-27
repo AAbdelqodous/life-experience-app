@@ -14,7 +14,7 @@ import lombok.NoArgsConstructor;
 public class UpdateWorkStageRequest {
     
     @NotNull(message = "Stage is required")
-    private String stage;
+    private WorkStage stage;
     
     @Size(max = 500, message = "Notes must not exceed 500 characters")
     private String notes;

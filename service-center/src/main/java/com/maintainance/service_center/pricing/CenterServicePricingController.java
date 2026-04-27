@@ -16,39 +16,35 @@ import java.util.List;
 @RequiredArgsConstructor
 @Tag(name = "Center Service Pricing")
 public class CenterServicePricingController {
-    
+
     private final CenterServicePricingService service;
-    
+
     @GetMapping
     public ResponseEntity<List<CenterServicePricingResponse>> getMyPricing(
-            @AuthenticationPrincipal User caller
-    ) {
-        return ResponseEntity.ok(service.getMyPricing(caller));
+            @AuthenticationPrincipal User owner) {
+        return ResponseEntity.ok(service.getMyPricing(owner));
     }
-    
+
     @PostMapping
     public ResponseEntity<CenterServicePricingResponse> createPricing(
-            @RequestBody @Valid CreatePricingRequest request,
-            @AuthenticationPrincipal User caller
-    ) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.createPricing(caller, request));
+            @AuthenticationPrincipal User owner,
+            @RequestBody @Valid CenterServicePricingRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.createPricing(owner, request));
     }
-    
+
     @PutMapping("/{id}")
     public ResponseEntity<CenterServicePricingResponse> updatePricing(
+            @AuthenticationPrincipal User owner,
             @PathVariable Long id,
-            @RequestBody @Valid UpdatePricingRequest request,
-            @AuthenticationPrincipal User caller
-    ) {
-        return ResponseEntity.ok(service.updatePricing(caller, id, request));
+            @RequestBody @Valid CenterServicePricingRequest request) {
+        return ResponseEntity.ok(service.updatePricing(owner, id, request));
     }
-    
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deletePricing(
-            @PathVariable Long id,
-            @AuthenticationPrincipal User caller
-    ) {
-        service.deletePricing(caller, id);
+            @AuthenticationPrincipal User owner,
+            @PathVariable Long id) {
+        service.deletePricing(owner, id);
     }
 }

@@ -1,11 +1,12 @@
 package com.maintainance.service_center.progress;
 
 public enum MediaCategory {
-    PROBLEM_PHOTO,
-    DIAGNOSIS_PHOTO,
+    VEHICLE_ARRIVAL,
+    ISSUE_FOUND,
+    PARTS_USED,
     WORK_IN_PROGRESS,
-    COMPLETED_WORK,
-    PART_PHOTO,
-    RECEIPT,
-    OTHER
+    BEFORE_REPAIR,
+    AFTER_REPAIR,
+    QUALITY_CHECK,
+    CUSTOMER_PICKUP
 }

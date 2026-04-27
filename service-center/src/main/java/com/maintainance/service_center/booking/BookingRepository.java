@@ -28,6 +28,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @Query("SELECT b FROM Booking b WHERE b.center.id = :centerId AND b.bookingStatus IN :statuses")
     List<Booking> findByCenterIdAndStatuses(@Param("centerId") Long centerId, @Param("statuses") List<BookingStatus> statuses);
 
+    @Query("SELECT b FROM Booking b WHERE b.center.id = :centerId AND b.bookingStatus IN :statuses ORDER BY b.createdAt DESC")
+    Page<Booking> findByCenterIdAndStatusesPageable(@Param("centerId") Long centerId, @Param("statuses") List<BookingStatus> statuses, Pageable pageable);
+
     @Query("SELECT COUNT(b) FROM Booking b WHERE b.center.id = :centerId AND b.bookingStatus = :status")
     long countByCenterIdAndStatus(@Param("centerId") Long centerId, @Param("status") BookingStatus status);
 

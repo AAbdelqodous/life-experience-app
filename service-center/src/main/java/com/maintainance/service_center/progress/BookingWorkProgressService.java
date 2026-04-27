@@ -2,8 +2,11 @@ package com.maintainance.service_center.progress;
 
 import com.maintainance.service_center.booking.Booking;
 import com.maintainance.service_center.booking.BookingRepository;
+import com.maintainance.service_center.center.MaintenanceCenter;
+import com.maintainance.service_center.center.MaintenanceCenterRepository;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.EntityNotFoundException;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
@@ -18,16 +21,8 @@ public class BookingWorkProgressService {
 
     private final BookingWorkProgressRepository bookingWorkProgressRepository;
     private final BookingRepository bookingRepository;
+    private final MaintenanceCenterRepository centerRepository;
 
-    /**
-     * Get work progress for a booking (customer-facing)
-     * 
-     * @param bookingId the booking ID
-     * @param customer the authenticated customer
-     * @return list of booking work progress responses ordered by createdAt ASC
-     * @throws EntityNotFoundException if booking not found
-     * @throws AccessDeniedException if booking does not belong to the customer
-     */
     public List<BookingWorkProgressResponse> getProgressForCustomer(Long bookingId, User customer) {
         // Fetch booking
         Booking booking = bookingRepository.findById(bookingId)
@@ -52,43 +47,102 @@ public class BookingWorkProgressService {
 
         // Convert to response DTOs (internalNotes is excluded from the response DTO)
         return progressList.stream()
-                .map(this::toResponse)
+                .map(this::toCustomerResponse)
                 .toList();
     }
 
-    /**
-     * Map BookingWorkProgress entity to BookingWorkProgressResponse DTO
-     * Note: internalNotes is intentionally excluded from the response
-     */
-    private BookingWorkProgressResponse toResponse(BookingWorkProgress progress) {
+    public List<BookingWorkProgressResponse> getProgressForOwner(Long bookingId, User owner) {
+        // Verify booking belongs to the authenticated center owner
+        Booking booking = getBookingForOwner(bookingId, owner);
+
+        // Fetch progress entries ordered by createdAt ASC
+        List<BookingWorkProgress> progressList = bookingWorkProgressRepository
+                .findByBookingIdOrderByCreatedAtAsc(bookingId);
+
+        log.info("Retrieved {} progress entries for booking {} by owner {}", 
+                progressList.size(), bookingId, owner.getId());
+
+        // Convert to response DTOs (includes all fields including internalNotes)
+        return progressList.stream()
+                .map(this::toOwnerResponse)
+                .toList();
+    }
+
+    @Transactional
+    public void updateWorkStage(Long bookingId, User owner, UpdateWorkStageRequest request) {
+        Booking booking = getBookingForOwner(bookingId, owner);
+        booking.setWorkStage(request.getStage());
+        log.info("Updated work stage to {} for booking {} by owner {}", request.getStage(), bookingId, owner.getId());
+    }
+
+    @Transactional
+    public BookingWorkProgressResponse createWorkProgress(Long bookingId, User owner,
+            CreateWorkProgressRequest request, String fileUrl) {
+        // Verify booking belongs to the authenticated center owner
+        Booking booking = getBookingForOwner(bookingId, owner);
+
+        // Create work progress
+        BookingWorkProgress progress = BookingWorkProgress.builder()
+                .booking(booking)
+                .stage(booking.getWorkStage() != null ? booking.getWorkStage() : WorkStage.RECEIVED)
+                .notes(request.getNotes())
+                .notesAr(request.getNotesAr())
+                .internalNotes(request.getInternalNotes())
+                .photoUrl(fileUrl)
+                .estimatedMinutesRemaining(request.getEstimatedMinutesRemaining())
+                .createdByName(owner.getFirstname() + " " + owner.getLastname())
+                .build();
+
+        BookingWorkProgress saved = bookingWorkProgressRepository.save(progress);
+
+        log.info("Created work progress for booking {} by owner {}", bookingId, owner.getId());
+
+        return toOwnerResponse(saved);
+    }
+
+    private Booking getBookingForOwner(Long bookingId, User owner) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new EntityNotFoundException("Booking not found with id: " + bookingId));
+
+        MaintenanceCenter center = centerRepository.findFirstByOwnerId(owner.getId())
+                .orElseThrow(() -> new EntityNotFoundException("Maintenance center not found for owner"));
+
+        if (!booking.getCenter().getId().equals(center.getId())) {
+            throw new AccessDeniedException("You do not have access to this booking");
+        }
+
+        return booking;
+    }
+
+    // internalNotes intentionally excluded from customer view
+    private BookingWorkProgressResponse toCustomerResponse(BookingWorkProgress progress) {
         return BookingWorkProgressResponse.builder()
                 .id(progress.getId())
+                .bookingId(progress.getBooking().getId())
                 .stage(progress.getStage())
                 .notes(progress.getNotes())
                 .notesAr(progress.getNotesAr())
+                .photoUrl(progress.getPhotoUrl())
+                .videoUrl(progress.getVideoUrl())
                 .estimatedMinutesRemaining(progress.getEstimatedMinutesRemaining())
-                .photos(progress.getMedia().stream()
-                        .map(this::toMediaResponse)
-                        .collect(Collectors.toList()))
                 .createdAt(progress.getCreatedAt())
                 .createdByName(progress.getCreatedByName())
                 .build();
     }
 
-    /**
-     * Map BookingMedia entity to BookingMediaResponse DTO
-     */
-    private BookingMediaResponse toMediaResponse(BookingMedia media) {
-        return BookingMediaResponse.builder()
-                .id(media.getId())
-                .mediaType(media.getMediaType())
-                .category(media.getCategory())
-                .url(media.getUrl())
-                .thumbnailUrl(media.getThumbnailUrl())
-                .caption(media.getCaption())
-                .captionAr(media.getCaptionAr())
-                .isVisibleToCustomer(media.getIsVisibleToCustomer())
-                .createdAt(media.getCreatedAt())
+    private BookingWorkProgressResponse toOwnerResponse(BookingWorkProgress progress) {
+        return BookingWorkProgressResponse.builder()
+                .id(progress.getId())
+                .bookingId(progress.getBooking().getId())
+                .stage(progress.getStage())
+                .notes(progress.getNotes())
+                .notesAr(progress.getNotesAr())
+                .internalNotes(progress.getInternalNotes())
+                .photoUrl(progress.getPhotoUrl())
+                .videoUrl(progress.getVideoUrl())
+                .estimatedMinutesRemaining(progress.getEstimatedMinutesRemaining())
+                .createdAt(progress.getCreatedAt())
+                .createdByName(progress.getCreatedByName())
                 .build();
     }
 }

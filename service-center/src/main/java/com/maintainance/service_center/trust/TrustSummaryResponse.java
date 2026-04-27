@@ -1,18 +1,17 @@
 package com.maintainance.service_center.trust;
 
 import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.List;
 
-@Data
-@Builder
-@NoArgsConstructor
+@Getter
+@Setter
 @AllArgsConstructor
+@NoArgsConstructor
 public class TrustSummaryResponse {
-    
-    private Integer overallScore;
+
     private List<TrustBadgeResponse> badges;
 }

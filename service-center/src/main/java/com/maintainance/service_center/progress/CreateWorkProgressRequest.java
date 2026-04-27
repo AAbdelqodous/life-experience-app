@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AddProgressRequest {
+public class CreateWorkProgressRequest {
     
     @Size(max = 500, message = "Notes must not exceed 500 characters")
     private String notes;
