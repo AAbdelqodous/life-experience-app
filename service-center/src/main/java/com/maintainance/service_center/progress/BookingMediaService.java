@@ -98,6 +98,34 @@ public class BookingMediaService {
         return toResponse(saved);
     }
 
+    @Transactional
+    public BookingMediaResponse createCustomerMedia(Long bookingId, User customer, MultipartFile file,
+            String caption, String captionAr) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new EntityNotFoundException("Booking not found with id: " + bookingId));
+
+        if (!booking.getCustomer().getId().equals(customer.getId())) {
+            throw new AccessDeniedException("You do not have access to this booking");
+        }
+
+        String fileUrl = fileStorageService.storeFile(file);
+
+        BookingMedia media = BookingMedia.builder()
+                .booking(booking)
+                .mediaType(determineMediaType(file.getContentType()))
+                .category(MediaCategory.ISSUE_FOUND)
+                .url(fileUrl)
+                .caption(caption)
+                .captionAr(captionAr)
+                .isVisibleToCustomer(true)
+                .uploadedBy(customer)
+                .build();
+
+        BookingMedia saved = bookingMediaRepository.save(media);
+        log.info("Customer {} uploaded problem photo for booking {}", customer.getId(), bookingId);
+        return toResponse(saved);
+    }
+
     private Booking getBookingForOwner(Long bookingId, User owner) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new EntityNotFoundException("Booking not found with id: " + bookingId));

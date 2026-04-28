@@ -4,6 +4,10 @@ import com.maintainance.service_center.address.Address;
 import com.maintainance.service_center.category.ServiceCategory;
 import com.maintainance.service_center.category.ServiceCategoryRepository;
 import com.maintainance.service_center.config.FileStorageService;
+import com.maintainance.service_center.staff.CenterMembership;
+import com.maintainance.service_center.staff.CenterMembershipRepository;
+import com.maintainance.service_center.staff.CenterRole;
+import com.maintainance.service_center.staff.MembershipStatus;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -28,6 +33,7 @@ public class MaintenanceCenterService {
     private final MaintenanceCenterRepository centerRepository;
     private final ServiceCategoryRepository categoryRepository;
     private final FileStorageService fileStorageService;
+    private final CenterMembershipRepository membershipRepository;
 
     @Transactional
     public MaintenanceCenterResponse create(MaintenanceCenterRequest request, User owner) {
@@ -62,7 +68,19 @@ public class MaintenanceCenterService {
                 .build();
 
         centerRepository.save(center);
-        log.info("Created maintenance center id={} by owner id={}", center.getId(), owner.getId());
+        
+        // Create owner membership
+        CenterMembership ownerMembership = CenterMembership.builder()
+                .user(owner)
+                .center(center)
+                .role(CenterRole.OWNER)
+                .status(MembershipStatus.ACTIVE)
+                .activatedAt(LocalDateTime.now())
+                .build();
+        membershipRepository.save(ownerMembership);
+        
+        log.info("Created maintenance center id={} by owner id={} with owner membership id={}", 
+                center.getId(), owner.getId(), ownerMembership.getId());
         return toResponse(center);
     }
 

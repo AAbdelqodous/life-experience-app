@@ -4,7 +4,16 @@
       "Read(//mnt/c/Users/ahmed.elsayed/MaintenanceCenters/life-experience-app/**)",
       "Bash(./mvnw compile:*)",
       "Bash(mvn compile:*)",
-      "Bash(gh pr *)"
+      "Bash(gh pr *)",
+      "Bash(./mvnw test *)",
+      "Bash(mvn test *)",
+      "Read(//c/Program Files/Java//**)",
+      "Read(//c/Program Files/**)",
+      "Bash(where java *)",
+      "Bash(java -version)",
+      "Bash(export JAVA_HOME)",
+      "Bash(export PATH=\"$JAVA_HOME/bin:$PATH\")",
+      "Bash(JAVA_HOME=\"/c/Program Files/Java/jdk-21\" mvn test -q)"
     ]
   }
 }

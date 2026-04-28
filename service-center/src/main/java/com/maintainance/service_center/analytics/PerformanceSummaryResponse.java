@@ -15,7 +15,9 @@ public class PerformanceSummaryResponse {
     
     private long totalBookings;
     private long completedBookings;
+    private long cancelledBookings;
     private double cancellationRate;
     private Double averageRating;
     private BigDecimal totalRevenue;
+    private boolean revenueAvailable;
 }

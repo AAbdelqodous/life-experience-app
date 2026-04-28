@@ -86,12 +86,18 @@ public class TrustBadgeService {
     }
 
     private boolean checkBadgeCriteria(Long centerId, TrustBadgeType badgeType) {
-        return switch (badgeType) {
-            case FAST_RESPONDER -> checkFastResponder(centerId);
-            case TOP_RATED -> checkTopRated(centerId);
-            case HIGH_COMPLETION -> checkHighCompletion(centerId);
-            case VERIFIED_PRICING -> checkVerifiedPricing(centerId);
-        };
+        switch (badgeType) {
+            case FAST_RESPONDER:
+                return checkFastResponder(centerId);
+            case TOP_RATED:
+                return checkTopRated(centerId);
+            case HIGH_COMPLETION:
+                return checkHighCompletion(centerId);
+            case VERIFIED_PRICING:
+                return checkVerifiedPricing(centerId);
+            default:
+                return false;
+        }
     }
 
     private boolean checkFastResponder(Long centerId) {
@@ -146,29 +152,33 @@ public class TrustBadgeService {
     }
 
     private String getCriteriaEn(TrustBadgeType badgeType) {
-        return switch (badgeType) {
-            case FAST_RESPONDER ->
-                "Respond to at least 5 bookings within 2 hours on average over the last 30 days";
-            case TOP_RATED ->
-                "Maintain an average rating of 4.5 or above with at least 10 reviews";
-            case HIGH_COMPLETION ->
-                "Complete 90% or more of accepted bookings with at least 20 total";
-            case VERIFIED_PRICING ->
-                "Add at least one active service with pricing to your profile";
-        };
+        switch (badgeType) {
+            case FAST_RESPONDER:
+                return "Respond to at least 5 bookings within 2 hours on average over the last 30 days";
+            case TOP_RATED:
+                return "Maintain an average rating of 4.5 or above with at least 10 reviews";
+            case HIGH_COMPLETION:
+                return "Complete 90% or more of accepted bookings with at least 20 total";
+            case VERIFIED_PRICING:
+                return "Add at least one active service with pricing to your profile";
+            default:
+                return "";
+        }
     }
 
     private String getCriteriaAr(TrustBadgeType badgeType) {
-        return switch (badgeType) {
-            case FAST_RESPONDER ->
-                "الرد على 5 حجوزات على الأقل خلال ساعتين في المتوسط خلال آخر 30 يومًا";
-            case TOP_RATED ->
-                "الحفاظ على تقييم متوسط 4.5 أو أعلى مع 10 تقييمات على الأقل";
-            case HIGH_COMPLETION ->
-                "إتمام 90% أو أكثر من الحجوزات المقبولة مع 20 حجزًا على الأقل";
-            case VERIFIED_PRICING ->
-                "إضافة خدمة واحدة على الأقل بسعر محدد إلى ملفك الشخصي";
-        };
+        switch (badgeType) {
+            case FAST_RESPONDER:
+                return "الرد على 5 حجوزات على الأقل خلال ساعتين في المتوسط خلال آخر 30 يومًا";
+            case TOP_RATED:
+                return "الحفاظ على تقييم متوسط 4.5 أو أعلى مع 10 تقييمات على الأقل";
+            case HIGH_COMPLETION:
+                return "إتمام 90% أو أكثر من الحجوزات المقبولة مع 20 حجزًا على الأقل";
+            case VERIFIED_PRICING:
+                return "إضافة خدمة واحدة على الأقل بسعر محدد إلى ملفك الشخصي";
+            default:
+                return "";
+        }
     }
 
     private MaintenanceCenter getCenterForOwner(User owner) {

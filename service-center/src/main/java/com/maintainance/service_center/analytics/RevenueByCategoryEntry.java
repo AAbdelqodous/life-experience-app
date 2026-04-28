@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 public class RevenueByCategoryEntry {
     
-    private String serviceType;
+    private Long categoryId;
     private String categoryNameAr;
     private String categoryNameEn;
     private long completedBookings;

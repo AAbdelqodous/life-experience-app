@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -74,4 +75,6 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
                    "GROUP BY EXTRACT(HOUR FROM created_at)::integer ORDER BY hour",
            nativeQuery = true)
     List<Object[]> countBookingsByHourAndDateRange(@Param("centerId") Long centerId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+
+    List<Booking> findByCenterIdAndBookingDateBetween(Long centerId, LocalDate start, LocalDate end);
 }
