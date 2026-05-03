@@ -271,6 +271,7 @@ public class UserService {
                 .smsNotificationsEnabled(user.getSmsNotificationsEnabled())
                 .userType(user.getUserType())
                 .approvalStatus(user.getApprovalStatus())
+                .rejectionReason(user.getRejectionReason())
                 .accountLocked(user.isAccountLocked())
                 .enabled(user.isEnabled())
                 .emailVerifiedAt(user.getEmailVerifiedAt())

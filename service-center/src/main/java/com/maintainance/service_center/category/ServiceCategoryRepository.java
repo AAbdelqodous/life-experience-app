@@ -14,4 +14,6 @@ public interface ServiceCategoryRepository extends JpaRepository<ServiceCategory
     Optional<ServiceCategory> findByCode(String code);
 
     boolean existsByCode(String code);
+
+    boolean existsByCentersId(Long categoryId);
 }

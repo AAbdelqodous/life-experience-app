@@ -5,16 +5,17 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class SatisfactionSummaryResponse {
-    
+
     private Double averageRating;
-    private Double previousPeriodAverage;
     private long totalReviews;
-    private List<RatingDistributionEntry> distribution;
+    private long repliedReviews;
+    private double replyRate;
+    private Map<Integer, Long> ratingDistribution;
 }

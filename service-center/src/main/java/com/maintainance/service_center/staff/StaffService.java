@@ -2,18 +2,22 @@ package com.maintainance.service_center.staff;
 
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
+import com.maintainance.service_center.email.EmailService;
 import com.maintainance.service_center.handler.BusinessErrorCodes;
+import com.maintainance.service_center.user.TokenRepository;
 import com.maintainance.service_center.user.User;
 import com.maintainance.service_center.user.UserRepository;
+import jakarta.mail.MessagingException;
 import jakarta.persistence.EntityNotFoundException;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -28,6 +32,11 @@ public class StaffService {
     private final StaffInvitationRepository invitationRepository;
     private final MaintenanceCenterRepository centerRepository;
     private final UserRepository userRepository;
+    private final EmailService emailService;
+    private final TokenRepository tokenRepository;
+
+    @Value("${application.frontend-url}")
+    private String frontendUrl;
 
     public Page<CenterMembershipResponse> getStaff(Long centerId, MembershipStatus status, Pageable pageable, User caller) {
         MaintenanceCenter center = getActiveCenter(centerId);
@@ -71,8 +80,20 @@ public class StaffService {
                 .build();
 
         invitation = invitationRepository.save(invitation);
-        log.info("Created staff invitation id={} for email={} to center={} by user={}", 
+        log.info("Created staff invitation id={} for email={} to center={} by user={}",
                 invitation.getId(), request.getTargetEmail(), center.getId(), caller.getId());
+
+        String inviteLink = frontendUrl + "/accept-invite?token=" + invitation.getToken();
+        try {
+            emailService.sendInvitationEmail(
+                    request.getTargetEmail(),
+                    inviteLink,
+                    center.getNameEn(),
+                    invitation.getTargetRole().getEnglish()
+            );
+        } catch (MessagingException e) {
+            log.error("Failed to send invitation email to {}", request.getTargetEmail(), e);
+        }
 
         return invitation.getId();
     }
@@ -250,6 +271,14 @@ public class StaffService {
         // Check if user is already a member
         if (membershipRepository.existsByCenterIdAndUserId(invitation.getCenter().getId(), user.getId())) {
             throw new IllegalArgumentException("You are already a member of this center");
+        }
+
+        // Auto-activate user as belt-and-suspenders
+        if (!user.isEnabled()) {
+            user.setEnabled(true);
+            tokenRepository.deleteAllByUser(user);
+            userRepository.save(user);
+            log.info("Auto-activated user {} while accepting invitation", user.getId());
         }
 
         // Create membership

@@ -10,7 +10,8 @@ public enum BusinessErrorCodes {
     NEW_PASSWORD_DOES_NOT_MATCH(301, HttpStatus.BAD_REQUEST, "Password mismatch"),
     ACCOUNT_LOCKED(302, HttpStatus.FORBIDDEN, "Account has been locked"),
     ACCOUNT_DISABLED( 303, HttpStatus.FORBIDDEN, "Account is disabled"),
-    BAD_CREDENTIALS( 304, HttpStatus.FORBIDDEN, "Username and / or password is incorrect");
+    BAD_CREDENTIALS( 304, HttpStatus.FORBIDDEN, "Username and / or password is incorrect"),
+    ACCOUNT_REJECTED(305, HttpStatus.FORBIDDEN, "Account has been rejected by the platform administrator / تم رفض الحساب من قبل إدارة المنصة");
 
     @Getter
     private final int code;

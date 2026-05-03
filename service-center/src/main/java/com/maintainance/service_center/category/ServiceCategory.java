@@ -56,6 +56,6 @@ public class ServiceCategory {
     private LocalDateTime createdAt;
 
     @LastModifiedDate
-    @Column(insertable = false)
-    private LocalDateTime updatedBy;
+    @Column(name = "updated_by", insertable = false)
+    private LocalDateTime updatedAt;
 }

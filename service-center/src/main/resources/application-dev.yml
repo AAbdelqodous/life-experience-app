@@ -37,6 +37,10 @@ application:
   mail:
     frontend:
       activation-url: http://localhost:4200/activate-account
+  frontend-url: http://localhost:8081
+  admin:
+    email: admin@experience.com
+    password: Admin@12345
   storage:
     upload-dir: ./uploads
     max-file-size: 5242880

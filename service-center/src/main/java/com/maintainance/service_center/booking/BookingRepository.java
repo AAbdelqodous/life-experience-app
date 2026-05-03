@@ -77,4 +77,24 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Object[]> countBookingsByHourAndDateRange(@Param("centerId") Long centerId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
 
     List<Booking> findByCenterIdAndBookingDateBetween(Long centerId, LocalDate start, LocalDate end);
+
+    // Admin analytics methods
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.bookingStatus = :status")
+    long countByBookingStatus(@Param("status") BookingStatus status);
+
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.createdAt >= :startDate AND b.createdAt <= :endDate")
+    long countByCreatedAtBetween(@Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+
+    // Admin bookings view method
+    @Query("SELECT b FROM Booking b WHERE " +
+           "(:status IS NULL OR b.bookingStatus = :status) AND " +
+           "(:centerId IS NULL OR b.center.id = :centerId) AND " +
+           "(:startDate IS NULL OR b.bookingDate >= :startDate) AND " +
+           "(:endDate IS NULL OR b.bookingDate <= :endDate)")
+    Page<Booking> findAllWithFilters(
+            @Param("status") BookingStatus status,
+            @Param("centerId") Long centerId,
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate,
+            Pageable pageable);
 }

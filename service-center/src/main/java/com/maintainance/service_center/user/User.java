@@ -98,6 +98,10 @@ public class User implements UserDetails, Principal {
     @Column(name = "approval_status")
     private ApprovalStatus approvalStatus = ApprovalStatus.APPROVED;
 
+    // Rejection reason - only set when approvalStatus is REJECTED
+    @Column(name = "rejection_reason", length = 500, columnDefinition = "VARCHAR(500) DEFAULT NULL")
+    private String rejectionReason;
+
     @ManyToMany(fetch = FetchType.EAGER)
     private List<Role> roles;
 

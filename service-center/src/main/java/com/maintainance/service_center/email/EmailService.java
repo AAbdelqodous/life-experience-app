@@ -61,4 +61,33 @@ public class EmailService {
 
         mailSender.send(mimeMessage);
     }
+
+    @Async
+    public void sendInvitationEmail(
+            String toEmail,
+            String inviteLink,
+            String centerName,
+            String roleName
+    ) throws MessagingException {
+        MimeMessage mimeMessage = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(
+                mimeMessage,
+                MimeMessageHelper.MULTIPART_MODE_MIXED,
+                StandardCharsets.UTF_8.name()
+        );
+
+        Context context = new Context();
+        context.setVariable("inviteLink", inviteLink);
+        context.setVariable("centerName", centerName);
+        context.setVariable("roleName", roleName);
+
+        String html = templateEngine.process(EmailTemplateName.INVITE_STAFF.getName(), context);
+
+        helper.setFrom("noreply@maintenancecenter.com");
+        helper.setTo(toEmail);
+        helper.setSubject("You've been invited to join " + centerName);
+        helper.setText(html, true);
+
+        mailSender.send(mimeMessage);
+    }
 }

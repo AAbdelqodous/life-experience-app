@@ -71,6 +71,9 @@ public class MaintenanceCenter {
     private Boolean isVerified = false;
     private Boolean isActive = true;
 
+    @Column(columnDefinition = "BOOLEAN NOT NULL DEFAULT TRUE")
+    private Boolean enabled = true;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "owner_id")
     private User owner;

@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
+
 @Repository
 public interface MaintenanceCenterRepository extends JpaRepository<MaintenanceCenter, Long> {
 
@@ -82,5 +84,21 @@ public interface MaintenanceCenterRepository extends JpaRepository<MaintenanceCe
             @Param("latitude") Double latitude,
             @Param("longitude") Double longitude,
             @Param("maxDistance") Double maxDistance,
+            Pageable pageable);
+
+    // Admin analytics methods
+    @Query("SELECT COUNT(c) FROM MaintenanceCenter c WHERE c.owner.approvalStatus = :status")
+    long countByOwnerApprovalStatus(@Param("status") com.maintainance.service_center.user.ApprovalStatus status);
+
+    // Admin center management methods
+    @Query("SELECT c FROM MaintenanceCenter c WHERE c.owner.approvalStatus = :status")
+    Page<MaintenanceCenter> findByOwnerApprovalStatus(@Param("status") com.maintainance.service_center.user.ApprovalStatus status, Pageable pageable);
+
+    Page<MaintenanceCenter> findByEnabled(Boolean enabled, Pageable pageable);
+
+    @Query("SELECT c FROM MaintenanceCenter c WHERE c.owner.approvalStatus = :status AND c.enabled = :enabled")
+    Page<MaintenanceCenter> findByOwnerApprovalStatusAndEnabled(
+            @Param("status") com.maintainance.service_center.user.ApprovalStatus status,
+            @Param("enabled") Boolean enabled,
             Pageable pageable);
 }

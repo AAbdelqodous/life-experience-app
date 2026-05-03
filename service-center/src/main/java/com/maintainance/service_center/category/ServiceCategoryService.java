@@ -137,7 +137,7 @@ public class ServiceCategoryService {
                 .subcategoryCount(subcategoryCount)
                 .centerCount(centerCount)
                 .createdAt(category.getCreatedAt())
-                .updatedAt(category.getUpdatedBy())
+                .updatedAt(category.getUpdatedAt())
                 .build();
     }
 }

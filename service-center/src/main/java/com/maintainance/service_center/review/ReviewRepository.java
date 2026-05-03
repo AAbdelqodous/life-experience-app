@@ -36,4 +36,8 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
     @Query("SELECT COUNT(r) FROM Review r WHERE r.center.id = :centerId AND r.rating = :rating AND r.createdAt BETWEEN :startDate AND :endDate")
     long countByCenterAndRatingAndDateRange(@Param("centerId") Long centerId, @Param("rating") int rating, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+
+    // Admin analytics methods
+    @Query("SELECT AVG(r.rating) FROM Review r")
+    Double calculatePlatformAverageRating();
 }

@@ -53,6 +53,8 @@ public class UserResponse {
 
     private ApprovalStatus approvalStatus;
 
+    private String rejectionReason;
+
     private Boolean accountLocked;
     
     private Boolean enabled;

@@ -35,4 +35,19 @@ public interface ComplaintRepository extends JpaRepository<Complaint, Long> {
     Long countByUserIdAndStatus(@Param("userId") Integer userId, @Param("status") ComplaintStatus status);
 
     Optional<Complaint> findByIdAndComplainantId(Long id, Integer complainantId);
+
+    // Admin analytics methods
+    @Query("SELECT COUNT(c) FROM Complaint c WHERE c.status IN :statuses")
+    long countByStatusIn(@Param("statuses") List<ComplaintStatus> statuses);
+
+    // Admin complaint management methods
+    @Query("SELECT c FROM Complaint c WHERE " +
+           "(:status IS NULL OR c.status = :status) AND " +
+           "(:type IS NULL OR c.type = :type) AND " +
+           "(:priority IS NULL OR c.priority = :priority)")
+    Page<Complaint> findAllWithFilters(
+            @Param("status") ComplaintStatus status,
+            @Param("type") ComplaintType type,
+            @Param("priority") ComplaintPriority priority,
+            Pageable pageable);
 }

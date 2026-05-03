@@ -10,10 +10,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class BookingTrendEntry {
-    
-    private String periodLabel;
-    private String periodStart;
+
+    private String label;
+    private long bookings;
     private long completed;
     private long cancelled;
-    private long total;
 }

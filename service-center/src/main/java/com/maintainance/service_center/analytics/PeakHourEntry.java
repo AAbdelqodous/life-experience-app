@@ -10,7 +10,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PeakHourEntry {
-    
+
     private int hour;
     private long bookingCount;
+    private String label;
 }

@@ -4,7 +4,8 @@ import lombok.Getter;
 
 @Getter
 public enum EmailTemplateName {
-    ACTIVATE_ACCOUNT("activate_account")
+    ACTIVATE_ACCOUNT("activate_account"),
+    INVITE_STAFF("invite-staff")
 
     ;
 

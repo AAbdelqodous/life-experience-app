@@ -55,9 +55,28 @@ public class AuthenticationService {
         }
 
         UserType userType = request.getUserType() != null ? request.getUserType() : UserType.CUSTOMER;
-        ApprovalStatus approvalStatus = userType == UserType.CENTER_OWNER
-                ? ApprovalStatus.PENDING_APPROVAL
-                : ApprovalStatus.APPROVED;
+
+        // CUSTOMER users: activate immediately, no OTP needed
+        if (userType == UserType.CUSTOMER) {
+            var user = User.builder()
+                    .firstname(request.getFirstname())
+                    .lastname(request.getLastname())
+                    .email(request.getEmail())
+                    .password(passwordEncoder.encode(request.getPassword()))
+                    .accountLocked(false)
+                    .enabled(true)
+                    .userType(userType)
+                    .approvalStatus(null)
+                    .roles(List.of(userRole))
+                    .build();
+
+            userRepository.save(user);
+            log.info("CUSTOMER user saved and activated with ID: {}", user.getId());
+            return;
+        }
+
+        // CENTER_OWNER: existing OTP + approval flow unchanged
+        ApprovalStatus approvalStatus = ApprovalStatus.PENDING_APPROVAL;
 
         var user = User.builder()
                 .firstname(request.getFirstname())
@@ -72,7 +91,7 @@ public class AuthenticationService {
                 .build();
 
         userRepository.save(user);
-        log.info("User saved with ID: {}", user.getId());
+        log.info("CENTER_OWNER user saved with ID: {}", user.getId());
 
         sendValidationEmail(user);
     }
@@ -91,7 +110,7 @@ public class AuthenticationService {
 
         if (user.getApprovalStatus() == ApprovalStatus.REJECTED) {
             log.warn("Rejected center owner attempted login: {}", user.getEmail());
-            throw new IllegalStateException("Your registration has been rejected. Please contact support.");
+            throw new AccountRejectedException();
         }
 
         var claims = new HashMap<String, Object>();

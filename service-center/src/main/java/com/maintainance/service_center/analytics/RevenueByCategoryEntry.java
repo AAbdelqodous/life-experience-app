@@ -5,17 +5,17 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
-
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class RevenueByCategoryEntry {
-    
-    private Long categoryId;
+
+    private String categoryKey;
     private String categoryNameAr;
     private String categoryNameEn;
-    private long completedBookings;
-    private BigDecimal revenue;
+    private long bookingCount;
+    private double percentage;
+    private Double revenue;
+    private String color;
 }

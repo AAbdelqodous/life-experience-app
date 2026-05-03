@@ -8,6 +8,7 @@ import com.maintainance.service_center.user.UserRepository;
 import com.maintainance.service_center.user.UserType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,6 +25,12 @@ public class AdminSeeder implements ApplicationRunner {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
 
+    @Value("${application.admin.email}")
+    private String adminEmail;
+
+    @Value("${application.admin.password}")
+    private String adminPassword;
+
     @Override
     public void run(ApplicationArguments args) {
         seedAdminRole();
@@ -38,7 +45,6 @@ public class AdminSeeder implements ApplicationRunner {
     }
 
     private void seedAdminUser() {
-        String adminEmail = "admin@experience.com";
         if (userRepository.findByEmail(adminEmail).isPresent()) {
             return;
         }
@@ -46,18 +52,18 @@ public class AdminSeeder implements ApplicationRunner {
                 .orElseThrow(() -> new IllegalStateException("ROLE_ADMIN not found after seeding"));
 
         User admin = User.builder()
-                .firstname("Admin")
-                .lastname("System")
+                .firstname("Platform")
+                .lastname("Admin")
                 .email(adminEmail)
-                .password(passwordEncoder.encode("Admin@123"))
+                .password(passwordEncoder.encode(adminPassword))
                 .enabled(true)
                 .accountLocked(false)
-                .userType(UserType.CUSTOMER)
-                .approvalStatus(ApprovalStatus.APPROVED)
+                .userType(UserType.ADMIN)
+                .approvalStatus(null)
                 .roles(List.of(adminRole))
                 .build();
 
         userRepository.save(admin);
-        log.info("Seeded admin user: {} / Admin@123", adminEmail);
+        log.info("Seeded admin user: {}", adminEmail);
     }
 }

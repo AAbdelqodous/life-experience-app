@@ -6,23 +6,16 @@ import com.maintainance.service_center.booking.BookingStatus;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
 import com.maintainance.service_center.category.ServiceCategory;
-import com.maintainance.service_center.review.Review;
 import com.maintainance.service_center.user.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.text.DecimalFormat;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
 import java.time.temporal.TemporalAdjusters;
-import java.time.temporal.WeekFields;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -30,6 +23,15 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class AnalyticsService {
+
+    private static final Map<String, String> CATEGORY_COLORS = Map.of(
+            "CAR",            "#2196F3",
+            "ELECTRONICS",    "#9C27B0",
+            "HOME_APPLIANCE", "#FF9800",
+            "RESTAURANT",     "#F44336",
+            "HOTEL",          "#4CAF50",
+            "OTHER",          "#607D8B"
+    );
 
     private final MaintenanceCenterRepository centerRepository;
     private final BookingRepository bookingRepository;
@@ -45,14 +47,12 @@ public class AnalyticsService {
 
         double cancellationRate = 0.0;
         if (totalBookings > 0) {
-            cancellationRate = ((double) cancelledBookings / totalBookings) * 100;
-            cancellationRate = Math.round(cancellationRate * 10.0) / 10.0;
+            cancellationRate = Math.round(((double) cancelledBookings / totalBookings) * 1000.0) / 10.0;
         }
 
         Double averageRating = bookings.stream()
                 .filter(b -> b.getBookingStatus() == BookingStatus.COMPLETED && b.getReview() != null)
-                .map(b -> b.getReview().getRating())
-                .mapToInt(Integer::intValue)
+                .mapToInt(b -> b.getReview().getRating())
                 .average()
                 .orElse(Double.NaN);
         if (averageRating.isNaN()) {
@@ -61,22 +61,14 @@ public class AnalyticsService {
             averageRating = Math.round(averageRating * 10.0) / 10.0;
         }
 
-        BigDecimal totalRevenue = bookings.stream()
-                .filter(b -> b.getBookingStatus() == BookingStatus.COMPLETED && b.getFinalCost() != null)
-                .map(Booking::getFinalCost)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        boolean revenueAvailable = bookings.stream()
-                .anyMatch(b -> b.getBookingStatus() == BookingStatus.COMPLETED && b.getFinalCost() != null);
-
         return PerformanceSummaryResponse.builder()
                 .totalBookings(totalBookings)
                 .completedBookings(completedBookings)
                 .cancelledBookings(cancelledBookings)
                 .cancellationRate(cancellationRate)
                 .averageRating(averageRating)
-                .totalRevenue(totalRevenue)
-                .revenueAvailable(revenueAvailable)
+                .totalRevenue(null)
+                .revenueAvailable(false)
                 .build();
     }
 
@@ -85,57 +77,41 @@ public class AnalyticsService {
         MaintenanceCenter center = getCenterForOwner(user);
         List<Booking> bookings = bookingRepository.findByCenterIdAndBookingDateBetween(center.getId(), startDate, endDate);
 
-        List<BookingTrendEntry> data = new ArrayList<>();
+        List<BookingTrendEntry> data;
 
         if ("DAILY".equalsIgnoreCase(granularity)) {
-            Map<LocalDate, List<Booking>> groupedByDate = bookings.stream()
+            Map<LocalDate, List<Booking>> grouped = bookings.stream()
                     .collect(Collectors.groupingBy(Booking::getBookingDate));
 
-            for (Map.Entry<LocalDate, List<Booking>> entry : groupedByDate.entrySet()) {
-                LocalDate date = entry.getKey();
-                List<Booking> dayBookings = entry.getValue();
-
-                long total = dayBookings.size();
-                long completed = dayBookings.stream().filter(b -> b.getBookingStatus() == BookingStatus.COMPLETED).count();
-                long cancelled = dayBookings.stream().filter(b -> b.getBookingStatus() == BookingStatus.CANCELLED).count();
-
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("EEE d MMM", Locale.ENGLISH);
-                String periodLabel = date.format(formatter);
-
-                data.add(BookingTrendEntry.builder()
-                        .periodLabel(periodLabel)
-                        .periodStart(date.toString())
-                        .completed(completed)
-                        .cancelled(cancelled)
-                        .total(total)
-                        .build());
-            }
+            data = grouped.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .map(e -> {
+                        List<Booking> day = e.getValue();
+                        return BookingTrendEntry.builder()
+                                .label(e.getKey().getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.ENGLISH))
+                                .bookings(day.size())
+                                .completed(day.stream().filter(b -> b.getBookingStatus() == BookingStatus.COMPLETED).count())
+                                .cancelled(day.stream().filter(b -> b.getBookingStatus() == BookingStatus.CANCELLED).count())
+                                .build();
+                    })
+                    .collect(Collectors.toList());
         } else {
-            Map<LocalDate, List<Booking>> groupedByWeek = bookings.stream()
+            Map<LocalDate, List<Booking>> grouped = bookings.stream()
                     .collect(Collectors.groupingBy(b -> getWeekStart(b.getBookingDate())));
 
-            for (Map.Entry<LocalDate, List<Booking>> entry : groupedByWeek.entrySet()) {
-                LocalDate weekStart = entry.getKey();
-                List<Booking> weekBookings = entry.getValue();
-
-                long total = weekBookings.size();
-                long completed = weekBookings.stream().filter(b -> b.getBookingStatus() == BookingStatus.COMPLETED).count();
-                long cancelled = weekBookings.stream().filter(b -> b.getBookingStatus() == BookingStatus.CANCELLED).count();
-
-                String periodLabel = "Week of " + weekStart.getDayOfMonth() + " " + 
-                        weekStart.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
-
+            List<LocalDate> sortedWeeks = grouped.keySet().stream().sorted().collect(Collectors.toList());
+            data = new ArrayList<>();
+            for (int i = 0; i < sortedWeeks.size(); i++) {
+                LocalDate weekStart = sortedWeeks.get(i);
+                List<Booking> week = grouped.get(weekStart);
                 data.add(BookingTrendEntry.builder()
-                        .periodLabel(periodLabel)
-                        .periodStart(weekStart.toString())
-                        .completed(completed)
-                        .cancelled(cancelled)
-                        .total(total)
+                        .label("Week " + (i + 1))
+                        .bookings(week.size())
+                        .completed(week.stream().filter(b -> b.getBookingStatus() == BookingStatus.COMPLETED).count())
+                        .cancelled(week.stream().filter(b -> b.getBookingStatus() == BookingStatus.CANCELLED).count())
                         .build());
             }
         }
-
-        data.sort(Comparator.comparing(BookingTrendEntry::getPeriodStart));
 
         return BookingTrendsResponse.builder()
                 .granularity(granularity.toUpperCase())
@@ -153,28 +129,29 @@ public class AnalyticsService {
         }
 
         List<Booking> bookings = bookingRepository.findByCenterIdAndBookingDateBetween(center.getId(), startDate, endDate);
-        List<Booking> completedBookings = bookings.stream()
-                .filter(b -> b.getBookingStatus() == BookingStatus.COMPLETED)
+        long totalBookings = bookings.size();
+
+        Map<String, Long> countByServiceType = bookings.stream()
+                .filter(b -> b.getServiceType() != null)
+                .collect(Collectors.groupingBy(b -> b.getServiceType().name(), Collectors.counting()));
+
+        return categories.stream()
+                .map(cat -> {
+                    long catCount = countByServiceType.getOrDefault(cat.getCode(), 0L);
+                    double pct = totalBookings > 0
+                            ? Math.round(((double) catCount / totalBookings) * 1000.0) / 10.0
+                            : 0.0;
+                    return RevenueByCategoryEntry.builder()
+                            .categoryKey(cat.getCode())
+                            .categoryNameAr(cat.getNameAr())
+                            .categoryNameEn(cat.getNameEn())
+                            .bookingCount(catCount)
+                            .percentage(pct)
+                            .revenue(null)
+                            .color(CATEGORY_COLORS.getOrDefault(cat.getCode(), "#607D8B"))
+                            .build();
+                })
                 .collect(Collectors.toList());
-
-        long completedCount = completedBookings.size();
-        BigDecimal totalRevenue = completedBookings.stream()
-                .filter(b -> b.getFinalCost() != null)
-                .map(Booking::getFinalCost)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        List<RevenueByCategoryEntry> entries = new ArrayList<>();
-        for (ServiceCategory category : categories) {
-            entries.add(RevenueByCategoryEntry.builder()
-                    .categoryId(category.getId())
-                    .categoryNameAr(category.getNameAr())
-                    .categoryNameEn(category.getNameEn())
-                    .completedBookings(completedCount)
-                    .revenue(totalRevenue)
-                    .build());
-        }
-
-        return entries;
     }
 
     @Transactional(readOnly = true)
@@ -186,60 +163,40 @@ public class AnalyticsService {
                 .filter(b -> b.getReview() != null)
                 .collect(Collectors.toList());
 
+        long totalReviews = reviewedBookings.size();
+        long repliedReviews = reviewedBookings.stream()
+                .filter(b -> b.getReview().getCenterResponse() != null && !b.getReview().getCenterResponse().isBlank())
+                .count();
+
+        double replyRate = totalReviews > 0
+                ? Math.round(((double) repliedReviews / totalReviews) * 1000.0) / 10.0
+                : 0.0;
+
         Double averageRating = null;
-        if (!reviewedBookings.isEmpty()) {
-            averageRating = reviewedBookings.stream()
-                    .map(b -> b.getReview().getRating())
-                    .mapToInt(Integer::intValue)
+        if (totalReviews > 0) {
+            double raw = reviewedBookings.stream()
+                    .mapToInt(b -> b.getReview().getRating())
                     .average()
                     .orElse(Double.NaN);
-            if (!averageRating.isNaN()) {
-                averageRating = Math.round(averageRating * 10.0) / 10.0;
+            if (!Double.isNaN(raw)) {
+                averageRating = Math.round(raw * 10.0) / 10.0;
             }
         }
 
-        Double previousPeriodAverage = null;
-        if (startDate != null && endDate != null) {
-            long daysBetween = java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate);
-            LocalDate prevEnd = startDate.minusDays(1);
-            LocalDate prevStart = prevEnd.minusDays(daysBetween);
-
-            List<Booking> previousBookings = bookingRepository.findByCenterIdAndBookingDateBetween(center.getId(), prevStart, prevEnd);
-            List<Booking> previousReviewedBookings = previousBookings.stream()
-                    .filter(b -> b.getReview() != null)
-                    .collect(Collectors.toList());
-
-            if (!previousReviewedBookings.isEmpty()) {
-                previousPeriodAverage = previousReviewedBookings.stream()
-                        .map(b -> b.getReview().getRating())
-                        .mapToInt(Integer::intValue)
-                        .average()
-                        .orElse(Double.NaN);
-                if (!previousPeriodAverage.isNaN()) {
-                    previousPeriodAverage = Math.round(previousPeriodAverage * 10.0) / 10.0;
-                }
-            }
-        }
-
-        long totalReviews = reviewedBookings.size();
-
-        List<RatingDistributionEntry> distribution = new ArrayList<>();
-        for (int stars = 5; stars >= 1; stars--) {
-            final int starCount = stars;
-            long count = reviewedBookings.stream()
-                    .filter(b -> Objects.equals(b.getReview().getRating(), starCount))
-                    .count();
-            distribution.add(RatingDistributionEntry.builder()
-                    .stars(stars)
-                    .count(count)
-                    .build());
+        Map<Integer, Long> ratingDistribution = new LinkedHashMap<>();
+        for (int stars = 1; stars <= 5; stars++) {
+            final int s = stars;
+            ratingDistribution.put(s, reviewedBookings.stream()
+                    .filter(b -> Objects.equals(b.getReview().getRating(), s))
+                    .count());
         }
 
         return SatisfactionSummaryResponse.builder()
                 .averageRating(averageRating)
-                .previousPeriodAverage(previousPeriodAverage)
                 .totalReviews(totalReviews)
-                .distribution(distribution)
+                .repliedReviews(repliedReviews)
+                .replyRate(replyRate)
+                .ratingDistribution(ratingDistribution)
                 .build();
     }
 
@@ -253,16 +210,22 @@ public class AnalyticsService {
                 .collect(Collectors.groupingBy(b -> b.getBookingTime().getHour(), Collectors.counting()));
 
         List<PeakHourEntry> entries = new ArrayList<>();
-        for (Map.Entry<Integer, Long> entry : hourCounts.entrySet()) {
+        for (int hour = 0; hour < 24; hour++) {
             entries.add(PeakHourEntry.builder()
-                    .hour(entry.getKey())
-                    .bookingCount(entry.getValue())
+                    .hour(hour)
+                    .bookingCount(hourCounts.getOrDefault(hour, 0L))
+                    .label(formatHourLabel(hour))
                     .build());
         }
 
-        entries.sort(Comparator.comparing(PeakHourEntry::getHour));
-
         return entries;
+    }
+
+    private String formatHourLabel(int hour) {
+        if (hour == 0) return "12 AM";
+        if (hour < 12) return hour + " AM";
+        if (hour == 12) return "12 PM";
+        return (hour - 12) + " PM";
     }
 
     private MaintenanceCenter getCenterForOwner(User user) {

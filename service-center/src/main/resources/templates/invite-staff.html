@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+  <h2>You've been invited to join <span th:text="${centerName}"></span></h2>
+  <p>You have been invited as: <strong th:text="${roleName}"></strong></p>
+  <p>Click the link below to accept your invitation (expires in 48 hours):</p>
+  <a th:href="${inviteLink}" th:text="${inviteLink}"></a>
+  <p>If you don't have an account yet, you can create one after clicking the link.</p>
+</body>
+</html>
