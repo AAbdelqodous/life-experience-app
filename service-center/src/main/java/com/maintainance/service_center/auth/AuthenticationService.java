@@ -56,8 +56,8 @@ public class AuthenticationService {
 
         UserType userType = request.getUserType() != null ? request.getUserType() : UserType.CUSTOMER;
 
-        // CUSTOMER users: activate immediately, no OTP needed
-        if (userType == UserType.CUSTOMER) {
+        // CUSTOMER / CENTER_STAFF: activate immediately, no OTP, no admin approval needed
+        if (userType == UserType.CUSTOMER || userType == UserType.CENTER_STAFF) {
             var user = User.builder()
                     .firstname(request.getFirstname())
                     .lastname(request.getLastname())
@@ -71,11 +71,11 @@ public class AuthenticationService {
                     .build();
 
             userRepository.save(user);
-            log.info("CUSTOMER user saved and activated with ID: {}", user.getId());
+            log.info("{} user saved and activated with ID: {}", userType, user.getId());
             return;
         }
 
-        // CENTER_OWNER: existing OTP + approval flow unchanged
+        // OWNER: existing OTP + approval flow unchanged
         ApprovalStatus approvalStatus = ApprovalStatus.PENDING_APPROVAL;
 
         var user = User.builder()
@@ -91,7 +91,7 @@ public class AuthenticationService {
                 .build();
 
         userRepository.save(user);
-        log.info("CENTER_OWNER user saved with ID: {}", user.getId());
+        log.info("OWNER user saved with ID: {}", user.getId());
 
         sendValidationEmail(user);
     }

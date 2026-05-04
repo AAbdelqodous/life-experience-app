@@ -56,7 +56,7 @@ public class ReviewService {
         }
         
         // Verify user is a center owner
-        if (owner.getUserType() != UserType.CENTER_OWNER) {
+        if (owner.getUserType() != UserType.OWNER) {
             throw new AccessDeniedException("Only center owners can access review statistics");
         }
         

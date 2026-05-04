@@ -247,7 +247,7 @@ public class BookingService {
         }
         
         // Verify user is a center owner
-        if (caller.getUserType() != UserType.CENTER_OWNER) {
+        if (caller.getUserType() != UserType.OWNER) {
             throw new AccessDeniedException("Only center owners can access center statistics");
         }
         

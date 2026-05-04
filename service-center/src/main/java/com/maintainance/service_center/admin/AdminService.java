@@ -51,7 +51,7 @@ public class AdminService {
 
     public Page<UserResponse> getPendingOwners(Pageable pageable) {
         return userRepository
-                .findByUserTypeAndApprovalStatus(UserType.CENTER_OWNER, ApprovalStatus.PENDING_APPROVAL, pageable)
+                .findByUserTypeAndApprovalStatus(UserType.OWNER, ApprovalStatus.PENDING_APPROVAL, pageable)
                 .map(userService::toResponse);
     }
 
@@ -86,7 +86,7 @@ public class AdminService {
     private User findOwner(Integer userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found: " + userId));
-        if (user.getUserType() != UserType.CENTER_OWNER) {
+        if (user.getUserType() != UserType.OWNER) {
             throw new IllegalArgumentException("User " + userId + " is not a center owner");
         }
         return user;

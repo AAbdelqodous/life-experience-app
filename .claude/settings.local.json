@@ -13,7 +13,8 @@
       "Bash(java -version)",
       "Bash(export JAVA_HOME)",
       "Bash(export PATH=\"$JAVA_HOME/bin:$PATH\")",
-      "Bash(JAVA_HOME=\"/c/Program Files/Java/jdk-21\" mvn test -q)"
+      "Bash(JAVA_HOME=\"/c/Program Files/Java/jdk-21\" mvn test -q)",
+      "Bash(xargs grep *)"
     ]
   }
 }

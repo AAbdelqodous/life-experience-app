@@ -41,7 +41,7 @@ public class AdminAnalyticsService {
         // User statistics
         long totalUsers = userRepository.count();
         long totalCustomers = userRepository.countByUserType(UserType.CUSTOMER);
-        long totalOwners = userRepository.countByUserType(UserType.CENTER_OWNER);
+        long totalOwners = userRepository.countByUserType(UserType.OWNER);
         long newUsersThisMonth = userRepository.countByCreatedDateBetween(monthStart, monthEnd);
 
         // Center statistics

@@ -707,7 +707,7 @@ public enum LoyaltyTransactionType {
 - [x] Chat list + thread + WebSocket/STOMP real-time
 - [x] Notifications list + mark read
 - [x] Push notifications (FCM token registration)
-- [x] Multi-branch support + CENTER_OWNER self-registration + admin approval gate
+- [x] Multi-branch support + OWNER self-registration + admin approval gate
 
 ### Phase 3 — Customer App 🔄 ~90% Complete
 - [x] Foundation: auth flow, session, i18n, onboarding, error boundary

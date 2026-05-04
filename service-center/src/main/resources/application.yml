@@ -10,6 +10,10 @@ spring:
   jackson:
     serialization:
       write-dates-as-timestamps: false
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=1000,expireAfterWrite=3600s
 
 springdoc:
   default-produces-media-type: application/json

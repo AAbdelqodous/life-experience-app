@@ -51,6 +51,14 @@ public class SecurityConfig {
                                         "/webjars/**",
                                         "/swagger-ui.html"
                                 ).permitAll()
+                                // Lookup admin paths (write + admin-reads) must be ADMIN
+                                .requestMatchers(HttpMethod.POST,   "/lookups/**").hasRole("ADMIN")
+                                .requestMatchers(HttpMethod.PUT,    "/lookups/**").hasRole("ADMIN")
+                                .requestMatchers(HttpMethod.DELETE, "/lookups/**").hasRole("ADMIN")
+                                .requestMatchers("/lookups/admin/**").hasRole("ADMIN")
+                                // All lookup GETs are public (app bootstrap)
+                                .requestMatchers(HttpMethod.GET, "/lookups/**").permitAll()
+                                // Admin panel
                                 .requestMatchers("/admin/**").hasRole("ADMIN")
                                         .anyRequest()
                                         .authenticated()
