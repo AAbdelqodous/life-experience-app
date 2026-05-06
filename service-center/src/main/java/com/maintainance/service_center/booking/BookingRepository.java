@@ -45,6 +45,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @Query("SELECT SUM(b.finalCost) FROM Booking b WHERE b.center.owner.id = :ownerId AND b.bookingStatus = 'COMPLETED'")
     BigDecimal sumFinalCostByOwnerId(@Param("ownerId") Integer ownerId);
 
+    @Query("SELECT SUM(b.finalCost) FROM Booking b WHERE b.center.id = :centerId AND b.bookingStatus = 'COMPLETED'")
+    BigDecimal sumFinalCostByCenterId(@Param("centerId") Long centerId);
+
     @Query("SELECT COUNT(b) FROM Booking b WHERE b.center.owner.id = :ownerId")
     Long countByOwnerId(@Param("ownerId") Integer ownerId);
 

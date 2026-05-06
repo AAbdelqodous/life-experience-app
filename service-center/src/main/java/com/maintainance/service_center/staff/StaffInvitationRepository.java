@@ -30,4 +30,6 @@ public interface StaffInvitationRepository extends JpaRepository<StaffInvitation
                                                          @Param("now") LocalDateTime now);
 
     boolean existsByCenterIdAndTargetEmailAndStatus(Long centerId, String targetEmail, InvitationStatus status);
+
+    boolean existsByTargetEmailAndStatus(String targetEmail, InvitationStatus status);
 }

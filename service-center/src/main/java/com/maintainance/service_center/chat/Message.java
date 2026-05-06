@@ -32,7 +32,7 @@ public class Message {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private SenderType senderType; // CUSTOMER or CENTER_STAFF
+    private SenderType senderType; // CUSTOMER or STAFF
 
     @Column(columnDefinition = "TEXT", nullable = false)
     private String content;

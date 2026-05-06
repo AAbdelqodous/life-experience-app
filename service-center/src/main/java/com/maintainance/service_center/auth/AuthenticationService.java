@@ -56,8 +56,8 @@ public class AuthenticationService {
 
         UserType userType = request.getUserType() != null ? request.getUserType() : UserType.CUSTOMER;
 
-        // CUSTOMER / CENTER_STAFF: activate immediately, no OTP, no admin approval needed
-        if (userType == UserType.CUSTOMER || userType == UserType.CENTER_STAFF) {
+        // CUSTOMER / STAFF: activate immediately, no OTP, no admin approval needed
+        if (userType == UserType.CUSTOMER || userType == UserType.STAFF) {
             var user = User.builder()
                     .firstname(request.getFirstname())
                     .lastname(request.getLastname())

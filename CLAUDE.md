@@ -857,3 +857,287 @@ src/main/java/com/maintainance/service_center/
 └── resources/
     └── firebase-service-account.json  # Firebase credentials (gitignored)
 ```
+
+
+# CLAUDE.md additions — Backend (`life-experience-app` / `service-center`)
+
+> Append these sections to `service-center/CLAUDE.md`. Existing content stays.
+> Where a section already exists (e.g. "Existing Enums", "Working Endpoints"),
+> merge the new lines into the existing block — do not duplicate the heading.
+
+---
+
+## 👥 Center Staff — New Domain (Phase 2.6)
+
+A `MaintenanceCenter` has **one Owner** (`User.userType = CENTER_OWNER`) and
+**zero or more Staff members** (`User.userType = STAFF`). Staff are scoped to
+exactly one center at a time and have a strict subset of the Owner's permissions.
+
+### Permission Matrix
+
+| Capability                            | OWNER | STAFF |
+|---------------------------------------|:-----:|:-----:|
+| View center profile                   | ✅    | ✅    |
+| Edit center profile / images / hours  | ✅    | ❌    |
+| Invite / remove staff                 | ✅    | ❌    |
+| View **all** center bookings          | ✅    | ❌    |
+| View **own assigned** bookings        | ✅    | ✅    |
+| Update booking status                 | ✅    | ✅ (only on assigned bookings) |
+| Assign booking to a staff member      | ✅    | ❌    |
+| View center reviews list              | ✅    | ❌ (sees only reviews on their bookings) |
+| Reply to review                       | ✅    | ❌    |
+| View center-wide analytics            | ✅    | ❌    |
+| View personal analytics               | n/a   | ✅    |
+| Receive personal notifications        | ✅    | ✅    |
+| Edit own user profile                 | ✅    | ✅    |
+
+---
+
+## 🗄️ Database — New Tables & Columns
+
+### New table: `center_staff`
+Join entity linking a `User` (with `userType = STAFF`) to a `MaintenanceCenter`.
+
+```sql
+CREATE TABLE center_staff (
+    id                BIGSERIAL PRIMARY KEY,
+    center_id         INTEGER NOT NULL REFERENCES maintenance_centers(id),
+    user_id           INTEGER NOT NULL REFERENCES _user(id),
+    job_title_ar      VARCHAR(100),
+    job_title_en      VARCHAR(100),
+    active            BOOLEAN NOT NULL DEFAULT TRUE,
+    joined_at         TIMESTAMP NOT NULL DEFAULT NOW(),
+    deactivated_at    TIMESTAMP,
+    invited_by_user_id INTEGER REFERENCES _user(id),
+    created_date      TIMESTAMP,
+    last_modified_date TIMESTAMP,
+    CONSTRAINT uk_center_staff_user_center UNIQUE (user_id, center_id)
+);
+
+CREATE INDEX idx_center_staff_center  ON center_staff(center_id) WHERE active = TRUE;
+CREATE INDEX idx_center_staff_user    ON center_staff(user_id)   WHERE active = TRUE;
+```
+
+> **Hibernate auto-DDL:** The dev profile uses `ddl-auto: update`, so the table is
+> created automatically. For production, write a Flyway/Liquibase migration —
+> we are not adding migration tooling in this phase.
+
+### Modified table: `booking`
+Add the staff-assignment columns. Both nullable (a booking can be unassigned).
+
+```sql
+ALTER TABLE booking ADD COLUMN assigned_staff_id INTEGER REFERENCES _user(id);
+ALTER TABLE booking ADD COLUMN assigned_at       TIMESTAMP;
+ALTER TABLE booking ADD COLUMN assigned_by_user_id INTEGER REFERENCES _user(id);
+
+CREATE INDEX idx_booking_assigned_staff ON booking(assigned_staff_id)
+    WHERE assigned_staff_id IS NOT NULL;
+```
+
+### Modified enum: `UserType`
+Add `STAFF` to the existing `com.maintainance.service_center.user.UserType`:
+
+```java
+public enum UserType {
+    CUSTOMER,
+    CENTER_OWNER,
+    STAFF       // ← new
+}
+```
+
+### Modified enum: `Role` seed
+Existing roles: `ROLE_USER`, `ROLE_CENTER_OWNER`, `ROLE_ADMIN`. Add:
+
+```
+ROLE_CENTER_STAFF
+```
+
+Granted automatically when a staff invitation is accepted.
+
+---
+
+## 📦 New Backend Package: `staff/`
+
+```
+service-center/src/main/java/com/maintainance/service_center/staff/
+├── CenterStaff.java                    # @Entity (join table)
+├── CenterStaffRepository.java          # JpaRepository
+├── CenterStaffService.java             # Invite, list, deactivate, lookup
+├── CenterStaffController.java          # @RequestMapping("/centers/my/staff")
+├── StaffInviteRequest.java             # email, firstname, lastname, jobTitleAr, jobTitleEn
+├── StaffUpdateRequest.java             # jobTitleAr, jobTitleEn, active
+├── CenterStaffResponse.java            # id, user{...}, jobTitleAr/En, active, joinedAt
+└── StaffMapper.java                    # static toResponse(...)
+```
+
+The `staff/` package owns its endpoints. **Do not** scatter staff logic across
+`booking/`, `review/`, etc. — instead, those packages query `CenterStaffRepository`
+to resolve "is this user staff at this center?" via a small helper service.
+
+---
+
+## 🔐 Authentication Changes
+
+### Modified: `AuthResponse`
+Add two fields (both nullable to preserve backward compatibility for CUSTOMER):
+
+```java
+public class AuthResponse {
+    String token;
+    ApprovalStatus approvalStatus;   // existing
+    UserType userType;               // ← new (CUSTOMER | CENTER_OWNER | STAFF)
+    Integer affiliatedCenterId;      // ← new (set only when userType = STAFF)
+}
+```
+
+The center-owner app reads `userType` immediately after login and routes to
+the correct tab layout. `affiliatedCenterId` lets the staff app skip the
+branch-selector screen.
+
+### Modified: `GET /users/me` response (`UserResponse`)
+Same two new fields appended. Used by `(app)/_layout.tsx` on session restore.
+
+### Staff invitation flow (no self-registration)
+1. Owner: `POST /centers/my/staff` with `{ email, firstname, lastname, jobTitleAr, jobTitleEn }`
+2. Backend creates `User` (`userType=STAFF`, `enabled=false`, random password placeholder),
+   creates `CenterStaff` row, generates OTP token, sends email via existing `EmailService`
+   using a new `staff_invitation` Thymeleaf template.
+3. Staff opens email → frontend route `/activate-account?token=XXXXXX&staff=true`
+4. Frontend collects new password → `POST /auth/staff/activate` with `{ token, password }`
+5. Backend validates token, sets password (BCrypt), `enabled=true`, returns JWT.
+
+**No `approvalStatus` flow for staff.** The Owner's invitation IS the approval.
+`approvalStatus` is only meaningful for self-registered `CENTER_OWNER`s.
+
+---
+
+## 📡 New & Modified Endpoints
+
+All paths are under `/api/v1/`. Roles enforced via `@PreAuthorize`.
+
+### Staff management (Owner only)
+```
+POST   /centers/my/staff                  → CenterStaffResponse        ROLE_CENTER_OWNER
+GET    /centers/my/staff?active=true      → Page<CenterStaffResponse>  ROLE_CENTER_OWNER
+PUT    /centers/my/staff/{staffId}        → CenterStaffResponse        ROLE_CENTER_OWNER
+DELETE /centers/my/staff/{staffId}        → 204 (soft delete: active=false)  ROLE_CENTER_OWNER
+```
+
+### Staff activation (public — token-gated)
+```
+POST   /auth/staff/activate                → AuthResponse               PUBLIC
+        body: { token, password }
+```
+
+### Booking assignment (Owner only)
+```
+PUT    /bookings/{id}/assign               → BookingResponse            ROLE_CENTER_OWNER
+        body: { staffUserId }              # null → unassign
+```
+
+### Bookings — modified behavior
+```
+GET    /bookings?page=&size=&status=
+   • OWNER → unchanged: all bookings for active center
+   • STAFF → automatically filtered to bookings WHERE assigned_staff_id = :currentUserId
+GET    /bookings/{id}
+   • STAFF → 403 if booking is not assigned to them
+PUT    /bookings/{id}/status
+   • STAFF → 403 if booking is not assigned to them
+```
+
+### Reviews — modified behavior
+```
+GET    /reviews/center                     → unchanged                 ROLE_CENTER_OWNER
+GET    /reviews/my-assigned                → Page<ReviewResponse>      ROLE_CENTER_STAFF
+        # Reviews on bookings WHERE assigned_staff_id = :currentUserId
+PUT    /reviews/{id}/reply                 → ROLE_CENTER_OWNER only
+```
+
+### Dashboard
+```
+GET    /dashboard/owner                    → OwnerDashboardResponse    ROLE_CENTER_OWNER
+GET    /dashboard/staff                    → StaffDashboardResponse    ROLE_CENTER_STAFF
+```
+
+`OwnerDashboardResponse` = center-wide stats (existing payload, just renamed
+endpoint from whatever you currently expose).
+`StaffDashboardResponse` = `{ assignedTotal, assignedActive, assignedCompleted,
+assignedThisWeek, averageRatingOnMyBookings, recentAssignedBookings[5] }`.
+
+### Analytics
+```
+GET    /analytics/owner?period=...         → OwnerAnalyticsResponse    ROLE_CENTER_OWNER
+GET    /analytics/staff?period=...         → StaffAnalyticsResponse    ROLE_CENTER_STAFF
+```
+
+`StaffAnalyticsResponse` covers: bookings handled, completion rate,
+on-time rate, average rating from assigned bookings, trend by day/week.
+**No revenue numbers** — staff don't see money.
+
+### Notifications — unchanged
+`GET /notifications` is already per-user; no change needed.
+
+---
+
+## 🛡️ Security Wiring
+
+In `SecurityConfig`:
+- All staff-management endpoints (`/centers/my/staff/**`) → `hasRole("CENTER_OWNER")`
+- `/dashboard/owner`, `/analytics/owner`, `/reviews/center`, `/reviews/{id}/reply`,
+  `/bookings/{id}/assign` → `hasRole("CENTER_OWNER")`
+- `/dashboard/staff`, `/analytics/staff`, `/reviews/my-assigned`, `/auth/staff/activate`
+  → `hasRole("CENTER_STAFF")` (last one is permitAll)
+- `/bookings/**` → `hasAnyRole("CENTER_OWNER","CENTER_STAFF")` and the
+  service layer enforces row-level filtering for STAFF.
+
+**Row-level filtering pattern** (use everywhere a staff can see partial data):
+
+```java
+// In BookingService
+public Page<BookingResponse> listForCurrentUser(User currentUser, Pageable pageable, BookingStatus status) {
+    if (currentUser.getUserType() == UserType.STAFF) {
+        return bookingRepository
+            .findByAssignedStaff_IdAndStatusOptional(currentUser.getId(), status, pageable)
+            .map(bookingMapper::toResponse);
+    }
+    // existing owner path
+    Integer centerId = resolveActiveCenterId(currentUser);
+    return bookingRepository
+        .findByCenter_IdAndStatusOptional(centerId, status, pageable)
+        .map(bookingMapper::toResponse);
+}
+```
+
+Never trust the JWT alone for STAFF authorization on a specific booking —
+always re-check `assignedStaffId == currentUser.id` in the service before
+returning a single booking or applying a status update.
+
+---
+
+## ✏️ Existing Enums — Add To List
+
+In the "Existing Enums (do not redefine)" line of CLAUDE.md, the `UserType`
+entry is unchanged in name but now includes `STAFF`. No other enum changes.
+
+---
+
+## 🚀 Phase Tracker — Add Entry
+
+Append under "Development Phases":
+
+```
+### Phase 2.6 — Center Staff (Backend) ⏳ Pending
+- [ ] UserType.STAFF + ROLE_CENTER_STAFF seed
+- [ ] CenterStaff entity, repository, service, controller, DTOs
+- [ ] Booking.assignedStaff + assignedAt + assignedBy columns
+- [ ] Staff invitation email template + AuthService.activateStaff
+- [ ] AuthResponse / UserResponse: userType + affiliatedCenterId
+- [ ] Booking row-level filter for STAFF
+- [ ] Review row-level filter for STAFF (my-assigned endpoint)
+- [ ] /dashboard/{owner|staff} split
+- [ ] /analytics/{owner|staff} split
+- [ ] @PreAuthorize on all owner-only endpoints
+- [ ] Integration tests covering staff cannot: edit center, reply review,
+      assign bookings, view unassigned bookings
+```

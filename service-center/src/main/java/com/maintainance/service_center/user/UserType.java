@@ -3,7 +3,7 @@ package com.maintainance.service_center.user;
 public enum UserType {
     CUSTOMER,
     OWNER,
-    CENTER_STAFF,
+    STAFF,
     ADMIN,
     SUPER_ADMIN
 }

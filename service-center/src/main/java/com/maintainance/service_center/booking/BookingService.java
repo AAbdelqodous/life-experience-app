@@ -1,9 +1,9 @@
 package com.maintainance.service_center.booking;
 
+import com.maintainance.service_center.center.CenterResolverService;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
 import com.maintainance.service_center.user.User;
-import com.maintainance.service_center.user.UserType;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +25,7 @@ public class BookingService {
 
     private final BookingRepository bookingRepository;
     private final MaintenanceCenterRepository centerRepository;
+    private final CenterResolverService centerResolver;
 
     public Page<BookingResponse> findByCustomer(User customer, Pageable pageable) {
         return bookingRepository.findByCustomer_IdOrderByCreatedAtDesc(customer.getId(), pageable)
@@ -32,11 +33,9 @@ public class BookingService {
     }
 
     public Page<BookingResponse> findByCenter(Long centerId, BookingStatus status, User caller, Pageable pageable) {
-        MaintenanceCenter center = centerRepository.findById(centerId)
+        centerRepository.findById(centerId)
                 .orElseThrow(() -> new EntityNotFoundException("Center not found with id: " + centerId));
-        if (center.getOwner() == null || !center.getOwner().getId().equals(caller.getId())) {
-            throw new AccessDeniedException("You do not have permission to view bookings for this center");
-        }
+        centerResolver.assertAccess(centerId, caller);
         if (status != null) {
             return bookingRepository.findByCenterIdAndStatusesPageable(centerId, List.of(status), pageable)
                     .map(this::toResponse);
@@ -242,26 +241,17 @@ public class BookingService {
     }
 
     public BookingStatsResponse getCenterStats(User caller) {
-        if (caller == null) {
-            throw new IllegalArgumentException("User must be authenticated");
-        }
-        
-        // Verify user is a center owner
-        if (caller.getUserType() != UserType.OWNER) {
-            throw new AccessDeniedException("Only center owners can access center statistics");
-        }
-        
-        Integer ownerId = caller.getId();
+        Long centerId = centerResolver.resolveCenter(caller).getId();
         return BookingStatsResponse.builder()
-                .total(bookingRepository.countByOwnerId(ownerId))
-                .pending(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.PENDING))
-                .confirmed(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.CONFIRMED))
-                .inProgress(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.IN_PROGRESS))
-                .completed(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.COMPLETED))
-                .cancelled(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.CANCELLED))
-                .noShow(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.NO_SHOW))
-                .rescheduled(bookingRepository.countByOwnerIdAndStatus(ownerId, BookingStatus.RESCHEDULED))
-                .totalRevenue(nullSafe(bookingRepository.sumFinalCostByOwnerId(ownerId)))
+                .total(bookingRepository.countByCenterId(centerId))
+                .pending(bookingRepository.countByCenterIdAndStatus(centerId, BookingStatus.PENDING))
+                .confirmed(bookingRepository.countByCenterIdAndStatus(centerId, BookingStatus.CONFIRMED))
+                .inProgress(bookingRepository.countByCenterIdAndStatus(centerId, BookingStatus.IN_PROGRESS))
+                .completed(bookingRepository.countByCenterIdAndStatus(centerId, BookingStatus.COMPLETED))
+                .cancelled(bookingRepository.countByCenterIdAndStatus(centerId, BookingStatus.CANCELLED))
+                .noShow(bookingRepository.countByCenterIdAndStatus(centerId, BookingStatus.NO_SHOW))
+                .rescheduled(bookingRepository.countByCenterIdAndStatus(centerId, BookingStatus.RESCHEDULED))
+                .totalRevenue(nullSafe(bookingRepository.sumFinalCostByCenterId(centerId)))
                 .build();
     }
 
@@ -288,18 +278,16 @@ public class BookingService {
 
     private void checkOwnershipOrAccess(Booking booking, User caller) {
         boolean isCustomer = caller.getId().equals(booking.getCustomer().getId());
-        boolean isCenterOwner = booking.getCenter().getOwner() != null &&
-                caller.getId().equals(booking.getCenter().getOwner().getId());
-        if (!isCustomer && !isCenterOwner) {
+        if (isCustomer) return;
+        try {
+            centerResolver.assertAccess(booking.getCenter().getId(), caller);
+        } catch (AccessDeniedException e) {
             throw new IllegalArgumentException("You do not have permission to access this booking");
         }
     }
 
     private void checkCenterAccess(Booking booking, User caller) {
-        if (booking.getCenter().getOwner() == null ||
-                !caller.getId().equals(booking.getCenter().getOwner().getId())) {
-            throw new AccessDeniedException("You do not have permission to modify this booking");
-        }
+        centerResolver.assertAccess(booking.getCenter().getId(), caller);
     }
 
     private String generateBookingNumber() {

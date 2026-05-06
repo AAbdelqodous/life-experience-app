@@ -1,5 +1,6 @@
 package com.maintainance.service_center.review;
 
+import com.maintainance.service_center.center.CenterResolverService;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
 import com.maintainance.service_center.common.PageResponse;
@@ -23,6 +24,7 @@ public class ReviewService {
 
     private final ReviewRepository reviewRepository;
     private final MaintenanceCenterRepository centerRepository;
+    private final CenterResolverService centerResolver;
 
     @Transactional
     public ReviewResponse createReview(ReviewRequest request, User user) {
@@ -135,12 +137,9 @@ public class ReviewService {
         log.info("Review {} deleted successfully", reviewId);
     }
 
-    public PageResponse<ReviewResponse> getMyCenterReviews(User owner, int page, int size) {
-        log.info("Fetching reviews for owner {}'s center, page {}, size {}", owner.getId(), page, size);
-
-        MaintenanceCenter center = centerRepository.findFirstByOwnerId(owner.getId())
-                .orElseThrow(() -> new EntityNotFoundException("No center found for this account"));
-
+    public PageResponse<ReviewResponse> getMyCenterReviews(User caller, int page, int size) {
+        log.info("Fetching reviews for user {}'s center, page {}, size {}", caller.getId(), page, size);
+        MaintenanceCenter center = centerResolver.resolveCenter(caller);
         return getCenterReviews(center.getId(), page, size);
     }
 

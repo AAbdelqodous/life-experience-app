@@ -75,8 +75,8 @@ public class ChatService {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "createdAt"));
         Page<Message> messages = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId, pageable);
 
-        // Mark all CENTER_STAFF messages as read
-        messageRepository.markAllAsReadInConversation(conversationId, SenderType.CENTER_STAFF);
+        // Mark all STAFF messages as read
+        messageRepository.markAllAsReadInConversation(conversationId, SenderType.STAFF);
 
         return PageResponse.of(messages.map(this::mapToMessageResponse));
     }
@@ -215,7 +215,7 @@ public class ChatService {
 
         Long unreadCount = messageRepository.countUnreadMessages(
                 conversation.getId(),
-                SenderType.CENTER_STAFF
+                SenderType.STAFF
         );
 
         User customer = conversation.getCustomer();

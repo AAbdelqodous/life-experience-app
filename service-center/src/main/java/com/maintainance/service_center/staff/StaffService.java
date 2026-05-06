@@ -277,9 +277,12 @@ public class StaffService {
         if (!user.isEnabled()) {
             user.setEnabled(true);
             tokenRepository.deleteAllByUser(user);
-            userRepository.save(user);
-            log.info("Auto-activated user {} while accepting invitation", user.getId());
         }
+
+        // Mark as STAFF regardless of previous user type
+        user.setUserType(com.maintainance.service_center.user.UserType.STAFF);
+        userRepository.save(user);
+        log.info("Set user {} type to STAFF on invitation acceptance", user.getId());
 
         // Create membership
         CenterMembership membership = CenterMembership.builder()
@@ -411,6 +414,7 @@ public class StaffService {
                 .centerNameEn(invitation.getCenter().getNameEn())
                 .centerLogoUrl(invitation.getCenter().getLogoUrl())
                 .inviterName(invitation.getInvitedBy().fullName())
+                .targetEmail(invitation.getTargetEmail())
                 .targetRole(invitation.getTargetRole())
                 .roleAr(invitation.getTargetRole().getArabic())
                 .roleEn(invitation.getTargetRole().getEnglish())

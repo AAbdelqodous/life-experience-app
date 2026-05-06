@@ -3,6 +3,7 @@ package com.maintainance.service_center.analytics;
 import com.maintainance.service_center.booking.Booking;
 import com.maintainance.service_center.booking.BookingRepository;
 import com.maintainance.service_center.booking.BookingStatus;
+import com.maintainance.service_center.center.CenterResolverService;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
 import com.maintainance.service_center.category.ServiceCategory;
@@ -35,6 +36,7 @@ public class AnalyticsService {
 
     private final MaintenanceCenterRepository centerRepository;
     private final BookingRepository bookingRepository;
+    private final CenterResolverService centerResolver;
 
     @Transactional(readOnly = true)
     public PerformanceSummaryResponse getPerformanceSummary(User user, LocalDate startDate, LocalDate endDate) {
@@ -229,8 +231,7 @@ public class AnalyticsService {
     }
 
     private MaintenanceCenter getCenterForOwner(User user) {
-        return centerRepository.findFirstByOwnerId(user.getId())
-                .orElseThrow(() -> new RuntimeException("Center not found"));
+        return centerResolver.resolveCenter(user);
     }
 
     private LocalDate getWeekStart(LocalDate date) {

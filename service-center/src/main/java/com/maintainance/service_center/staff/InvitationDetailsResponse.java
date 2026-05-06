@@ -17,6 +17,7 @@ public class InvitationDetailsResponse {
     private String centerNameEn;
     private String centerLogoUrl;
     private String inviterName;
+    private String targetEmail;
     private CenterRole targetRole;
     private String roleAr;
     private String roleEn;

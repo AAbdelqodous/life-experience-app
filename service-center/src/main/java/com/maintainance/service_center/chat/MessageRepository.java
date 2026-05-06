@@ -27,7 +27,7 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
     @Query("SELECT m FROM Message m WHERE m.conversation.id = :conversationId AND m.senderType = 'CUSTOMER' AND m.isRead = false")
     List<Message> findUnreadCustomerMessages(@Param("conversationId") Long conversationId);
 
-    @Query("SELECT m FROM Message m WHERE m.conversation.id = :conversationId AND m.senderType = 'CENTER_STAFF' AND m.isRead = false")
+    @Query("SELECT m FROM Message m WHERE m.conversation.id = :conversationId AND m.senderType = 'STAFF' AND m.isRead = false")
     List<Message> findUnreadCenterMessages(@Param("conversationId") Long conversationId);
 
     @Modifying

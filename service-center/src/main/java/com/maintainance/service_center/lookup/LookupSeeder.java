@@ -229,7 +229,7 @@ public class LookupSeeder implements ApplicationRunner {
     private void seedSenderTypes() {
         Lookup l = getOrCreate("SENDER_TYPE", "Sender Type", "نوع المُرسل");
         detail(l, 0, "CUSTOMER",     "Customer",     "عميل");
-        detail(l, 1, "CENTER_STAFF", "Center Staff", "موظف المركز");
+        detail(l, 1, "STAFF", "Center Staff", "موظف المركز");
         detail(l, 2, "SYSTEM",       "System",       "النظام");
     }
 
