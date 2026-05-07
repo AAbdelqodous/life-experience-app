@@ -2,6 +2,8 @@ package com.maintainance.service_center.offer;
 
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
+import com.maintainance.service_center.staff.CenterMembershipRepository;
+import com.maintainance.service_center.staff.MembershipStatus;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,7 @@ public class OfferService {
 
     private final OfferRepository offerRepository;
     private final MaintenanceCenterRepository centerRepository;
+    private final CenterMembershipRepository membershipRepository;
 
     public OfferStatus computeStatus(CenterOffer offer) {
         if (offer.getCancelledAt() != null) return OfferStatus.CANCELLED;
@@ -33,9 +36,14 @@ public class OfferService {
         return OfferStatus.EXPIRED;
     }
 
-    private MaintenanceCenter resolveCenter(User owner) {
-        return centerRepository.findFirstByOwnerId(owner.getId())
-                .orElseThrow(() -> new EntityNotFoundException("No center found for this owner"));
+    private MaintenanceCenter resolveCenter(User user) {
+        return centerRepository.findFirstByOwnerId(user.getId())
+                .or(() -> membershipRepository
+                        .findByUserIdAndStatus(user.getId(), MembershipStatus.ACTIVE)
+                        .stream()
+                        .findFirst()
+                        .map(m -> m.getCenter()))
+                .orElseThrow(() -> new EntityNotFoundException("No center found for this user"));
     }
 
     @Transactional
