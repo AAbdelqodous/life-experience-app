@@ -37,4 +37,21 @@ public class AuthenticationController {
     ) throws MessagingException {
         service.activateAccount(token);
     }
+
+    @PostMapping("/forgot-password")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ResponseEntity<?> forgotPassword(
+            @RequestBody @Valid ForgotPasswordRequest request
+    ) throws MessagingException {
+        service.forgotPassword(request.getEmail());
+        return ResponseEntity.accepted().build();
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(
+            @RequestBody @Valid ResetPasswordRequest request
+    ) {
+        service.resetPassword(request.getToken(), request.getNewPassword());
+        return ResponseEntity.ok().build();
+    }
 }

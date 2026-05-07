@@ -143,11 +143,17 @@ public class AuthenticationService {
 
     @Transactional
     public String generateAndSaveActivationToken(User user) {
+        return generateAndSaveToken(user, null);
+    }
+
+    @Transactional
+    public String generateAndSaveToken(User user, String tokenType) {
         String generatedToken = generateActivationCode(6);
-        log.debug("Generated activation token: {} for user: {}", generatedToken, user.getEmail());
+        log.debug("Generated token (type={}): {} for user: {}", tokenType, generatedToken, user.getEmail());
 
         var token = Token.builder()
                 .token(generatedToken)
+                .tokenType(tokenType)
                 .createdAt(LocalDateTime.now())
                 .expiresAt(LocalDateTime.now().plusMinutes(15))
                 .user(user)
@@ -157,6 +163,53 @@ public class AuthenticationService {
         log.info("Token saved to database: {} for user ID: {}", generatedToken, user.getId());
 
         return generatedToken;
+    }
+
+    @Transactional
+    public void forgotPassword(String email) throws MessagingException {
+        var user = userRepository.findByEmailIgnoreCase(email).orElse(null);
+        if (user == null) {
+            return;
+        }
+        var resetToken = generateAndSaveToken(user, "RESET");
+        emailService.sendEmail(
+                user.getEmail(),
+                user.fullName(),
+                EmailTemplateName.RESET_PASSWORD,
+                null,
+                resetToken,
+                "Password Reset"
+        );
+        log.info("Password reset email sent to: {}", email);
+    }
+
+    @Transactional
+    public void resetPassword(String token, String newPassword) {
+        var savedToken = tokenRepository.findByToken(token)
+                .orElseThrow(() -> new RuntimeException("Invalid or expired reset code."));
+
+        if (savedToken.getValidatedAt() != null) {
+            throw new RuntimeException("This reset code has already been used.");
+        }
+
+        if (LocalDateTime.now().isAfter(savedToken.getExpiresAt())) {
+            throw new RuntimeException("Reset code has expired. Please request a new one.");
+        }
+
+        if (!"RESET".equals(savedToken.getTokenType())) {
+            throw new RuntimeException("Invalid reset code.");
+        }
+
+        var user = userRepository.findById(savedToken.getUser().getId())
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+
+        savedToken.setValidatedAt(LocalDateTime.now());
+        tokenRepository.save(savedToken);
+
+        log.info("Password reset successfully for user: {}", user.getEmail());
     }
 
     private String generateActivationCode(int length) {
