@@ -51,6 +51,9 @@ public class SecurityConfig {
                                         "/webjars/**",
                                         "/swagger-ui.html"
                                 ).permitAll()
+                                // Service catalog + categories are public bootstrap reads
+                                .requestMatchers(HttpMethod.GET, "/services/**").permitAll()
+                                .requestMatchers(HttpMethod.GET, "/categories/**").permitAll()
                                 // Lookup admin paths (write + admin-reads) must be ADMIN
                                 .requestMatchers(HttpMethod.POST,   "/lookups/**").hasRole("ADMIN")
                                 .requestMatchers(HttpMethod.PUT,    "/lookups/**").hasRole("ADMIN")

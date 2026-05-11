@@ -2,7 +2,10 @@ package com.maintainance.service_center.center;
 
 import com.maintainance.service_center.booking.BookingService;
 import com.maintainance.service_center.booking.BookingStatsResponse;
+import com.maintainance.service_center.category.ServiceCategoryResponse;
+import com.maintainance.service_center.service.CenterServiceResponse;
 import com.maintainance.service_center.user.User;
+import java.util.List;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -98,6 +101,21 @@ public class MaintenanceCenterController {
     @GetMapping("/{id}")
     public ResponseEntity<MaintenanceCenterResponse> findById(@PathVariable Long id) {
         return ResponseEntity.ok(service.findById(id));
+    }
+
+    @GetMapping("/{id}/categories")
+    public ResponseEntity<List<ServiceCategoryResponse>> findCenterCategories(
+            @PathVariable Long id
+    ) {
+        return ResponseEntity.ok(service.findCenterCategories(id));
+    }
+
+    @GetMapping("/{id}/categories/{catId}/services")
+    public ResponseEntity<List<CenterServiceResponse>> findCenterCategoryServices(
+            @PathVariable Long id,
+            @PathVariable Long catId
+    ) {
+        return ResponseEntity.ok(service.findCenterCategoryServices(id, catId));
     }
 
     @PutMapping("/my")

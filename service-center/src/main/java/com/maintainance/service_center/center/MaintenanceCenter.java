@@ -4,6 +4,7 @@ import com.maintainance.service_center.address.Address;
 import com.maintainance.service_center.booking.Booking;
 import com.maintainance.service_center.category.ServiceCategory;
 import com.maintainance.service_center.review.Review;
+import com.maintainance.service_center.service.CenterService;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -99,6 +100,9 @@ public class MaintenanceCenter {
     @ElementCollection
     @CollectionTable(name = "center_certifications")
     private List<String> certifications = new ArrayList<>();
+
+    @OneToMany(mappedBy = "center", fetch = FetchType.LAZY)
+    private List<CenterService> centerServices = new ArrayList<>();
 
     @OneToMany(mappedBy = "center", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Review> reviews = new ArrayList<>();

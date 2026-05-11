@@ -1,8 +1,11 @@
 package com.maintainance.service_center.booking;
 
+import com.maintainance.service_center.category.ServiceCategory;
 import com.maintainance.service_center.center.CenterResolverService;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
+import com.maintainance.service_center.service.CenterService;
+import com.maintainance.service_center.service.CenterServiceRepository;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +29,7 @@ public class BookingService {
     private final BookingRepository bookingRepository;
     private final MaintenanceCenterRepository centerRepository;
     private final CenterResolverService centerResolver;
+    private final CenterServiceRepository centerServiceRepository;
 
     public Page<BookingResponse> findByCustomer(User customer, Pageable pageable) {
         return bookingRepository.findByCustomer_IdOrderByCreatedAtDesc(customer.getId(), pageable)
@@ -63,6 +67,35 @@ public class BookingService {
             throw new IllegalArgumentException("Cannot create booking for inactive center");
         }
 
+        boolean hasNewFields = request.getCategoryId() != null && request.getServiceId() != null;
+        boolean hasLegacyField = request.getServiceType() != null;
+
+        if (!hasNewFields && !hasLegacyField) {
+            throw new IllegalArgumentException(
+                    "Either (categoryId + serviceId) or serviceType is required to create a booking");
+        }
+
+        com.maintainance.service_center.service.Service service = null;
+        ServiceCategory category = null;
+        ServiceType serviceType = request.getServiceType();
+
+        if (hasNewFields) {
+            CenterService offering = centerServiceRepository
+                    .findByCenterIdAndCategoryIdAndServiceIdAndIsActiveTrue(
+                            center.getId(), request.getCategoryId(), request.getServiceId())
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "This center does not actively offer the requested service for the given category"));
+            service = offering.getService();
+            category = offering.getCategory();
+            if (hasLegacyField) {
+                log.info("Booking created with both new (categoryId/serviceId) and legacy (serviceType) fields; " +
+                         "new fields take precedence for center id={}", center.getId());
+            }
+        } else {
+            log.warn("Booking created via deprecated serviceType field for center id={}; " +
+                     "please migrate clients to use categoryId + serviceId", center.getId());
+        }
+
         String bookingNumber = generateBookingNumber();
 
         Booking booking = Booking.builder()
@@ -73,7 +106,9 @@ public class BookingService {
                 .bookingTime(request.getBookingTime())
                 .estimatedEndTime(request.getEstimatedEndTime())
                 .bookingStatus(BookingStatus.PENDING)
-                .serviceType(request.getServiceType())
+                .serviceType(serviceType)
+                .service(service)
+                .category(category)
                 .serviceDescription(request.getServiceDescription())
                 .problemDescription(request.getProblemDescription())
                 .requestedServices(request.getRequestedServices() != null ? request.getRequestedServices() : List.of())
@@ -95,7 +130,7 @@ public class BookingService {
                 .build();
 
         bookingRepository.save(booking);
-        log.info("Created booking number={} for customer id={} at center id={}", 
+        log.info("Created booking number={} for customer id={} at center id={}",
                 bookingNumber, customer.getId(), center.getId());
         return toResponse(booking);
     }
@@ -343,6 +378,22 @@ public class BookingService {
                 .pickupRequired(booking.getPickupRequired())
                 .pickupAddress(booking.getPickupAddress())
                 .currentWorkStage(booking.getWorkStage())
+                .serviceSummary(booking.getService() != null
+                        ? BookingResponse.ServiceSummary.builder()
+                                .id(booking.getService().getId())
+                                .code(booking.getService().getCode())
+                                .nameAr(booking.getService().getNameAr())
+                                .nameEn(booking.getService().getNameEn())
+                                .build()
+                        : null)
+                .categorySummary(booking.getCategory() != null
+                        ? BookingResponse.CategorySummary.builder()
+                                .id(booking.getCategory().getId())
+                                .code(booking.getCategory().getCode())
+                                .nameAr(booking.getCategory().getNameAr())
+                                .nameEn(booking.getCategory().getNameEn())
+                                .build()
+                        : null)
                 .createdAt(booking.getCreatedAt())
                 .updatedAt(booking.getUpdatedAt())
                 .build();

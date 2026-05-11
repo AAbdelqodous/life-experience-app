@@ -1141,3 +1141,362 @@ Append under "Development Phases":
 - [ ] Integration tests covering staff cannot: edit center, reply review,
       assign bookings, view unassigned bookings
 ```
+# Phase 3.6 — Category → Service Hierarchy
+
+> **Append this section to `service-center/CLAUDE.md` after the existing Phase 2.6
+> staff section. It also requires two cleanup edits noted at the bottom.**
+
+---
+
+## 🎯 Goal
+
+Replace the flat `ServiceCategory` model — which mixes domains (`CAR`, `ELECTRONICS`)
+with services (`REPAIR`, `INSTALLATION`, `EMERGENCY`) at the same level — with a proper
+two-level hierarchy:
+
+```
+Category  (CAR, ELECTRONICS, HOME_APPLIANCE)
+   └── many-to-many ──> Service (REPAIR, MAINTENANCE, INSTALLATION,
+                                 WARRANTY, INSPECTION, BUYING, SELLING)
+```
+
+A center declares which `(category, service)` pairs it offers, with optional
+pricing per pair. A customer drills down: **center → categories → services**,
+then books.
+
+---
+
+## 🗂️ Schema Changes
+
+### 1. Cleaned `service_categories` seed (`AdminSeeder` update)
+
+**Drop** the rows: `REPAIR`, `INSTALLATION`, `EMERGENCY` (these become services).
+**Keep**: `CAR`, `ELECTRONICS`, `HOME_APPLIANCE`.
+
+```sql
+DELETE FROM service_categories WHERE code IN ('REPAIR', 'INSTALLATION', 'EMERGENCY');
+```
+
+### 2. New table: `service` (global catalog, 7 rows)
+
+```sql
+CREATE TABLE service (
+    id              SERIAL PRIMARY KEY,
+    code            VARCHAR(50) UNIQUE NOT NULL,
+    name_ar         VARCHAR(200) NOT NULL,
+    name_en         VARCHAR(200) NOT NULL,
+    description_ar  TEXT,
+    description_en  TEXT,
+    icon_url        VARCHAR(500),
+    is_active       BOOLEAN DEFAULT true,
+    created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP
+);
+```
+
+**Seed (`AdminSeeder`):**
+
+| code         | name_ar       | name_en       |
+|--------------|---------------|---------------|
+| REPAIR       | إصلاح         | Repair        |
+| MAINTENANCE  | صيانة         | Maintenance   |
+| INSTALLATION | تركيب         | Installation  |
+| WARRANTY     | خدمة الضمان   | Warranty      |
+| INSPECTION   | فحص           | Inspection    |
+| BUYING       | شراء          | Buying        |
+| SELLING      | بيع           | Selling       |
+
+### 3. New join table: `category_services`
+
+Pure M2M, no extra columns. Managed via JPA `@ManyToMany` on `Service`.
+
+```sql
+CREATE TABLE category_services (
+    category_id INTEGER NOT NULL REFERENCES service_categories(id),
+    service_id  INTEGER NOT NULL REFERENCES service(id),
+    PRIMARY KEY (category_id, service_id)
+);
+```
+
+**Seed mapping:**
+
+| Category        | Services                                                          |
+|-----------------|-------------------------------------------------------------------|
+| CAR             | REPAIR, MAINTENANCE, INSTALLATION, WARRANTY, INSPECTION, BUYING, SELLING |
+| ELECTRONICS     | REPAIR, WARRANTY, INSPECTION, BUYING, SELLING                     |
+| HOME_APPLIANCE  | REPAIR, MAINTENANCE, INSTALLATION, WARRANTY, INSPECTION           |
+
+### 4. New table: `center_services` (replaces `center_categories` AND the planned `center_service_pricing`)
+
+```sql
+CREATE TABLE center_services (
+    id                         SERIAL PRIMARY KEY,
+    center_id                  INTEGER NOT NULL REFERENCES maintenance_centers(id),
+    category_id                INTEGER NOT NULL REFERENCES service_categories(id),
+    service_id                 INTEGER NOT NULL REFERENCES service(id),
+    min_price                  DECIMAL(10,3),                -- nullable: "price on request"
+    max_price                  DECIMAL(10,3),
+    typical_duration_minutes   INTEGER,
+    description_ar             TEXT,                          -- center-specific override
+    description_en             TEXT,
+    is_active                  BOOLEAN DEFAULT true,
+    created_at                 TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at                 TIMESTAMP,
+    UNIQUE (center_id, category_id, service_id)
+);
+
+CREATE INDEX idx_center_services_center   ON center_services(center_id);
+CREATE INDEX idx_center_services_category ON center_services(category_id);
+CREATE INDEX idx_center_services_service  ON center_services(service_id);
+```
+
+**Categories a center serves are now derived:**
+```sql
+SELECT DISTINCT category_id FROM center_services WHERE center_id = ?
+```
+
+### 5. Modified `Booking` entity
+
+```sql
+ALTER TABLE booking ADD COLUMN service_id  INTEGER REFERENCES service(id);
+ALTER TABLE booking ADD COLUMN category_id INTEGER REFERENCES service_categories(id);
+
+CREATE INDEX idx_booking_service  ON booking(service_id);
+CREATE INDEX idx_booking_category ON booking(category_id);
+```
+
+Both nullable during the transition window. After both apps migrate to the new
+booking endpoint, a follow-up migration enforces `NOT NULL` and drops `service_type`.
+
+The `ServiceType` enum is marked `@Deprecated` immediately. Removal scheduled for
+**Phase 4 cleanup migration**.
+
+---
+
+## 🔄 Migration Plan (one-shot, run after Hibernate auto-creates new tables)
+
+```sql
+-- Step 1: clean ServiceCategory seed (handled by updated AdminSeeder on next boot)
+
+-- Step 2: backfill center_services from existing center_categories
+-- Default assumption: every existing center offers REPAIR for each of its categories.
+-- Owners refine via the new "My Services" screen after deploy.
+INSERT INTO center_services (center_id, category_id, service_id, is_active, created_at)
+SELECT cc.center_id,
+       cc.category_id,
+       (SELECT id FROM service WHERE code = 'REPAIR'),
+       true,
+       NOW()
+FROM center_categories cc
+WHERE EXISTS (
+    SELECT 1
+    FROM category_services cs
+    WHERE cs.category_id = cc.category_id
+      AND cs.service_id  = (SELECT id FROM service WHERE code = 'REPAIR')
+)
+ON CONFLICT (center_id, category_id, service_id) DO NOTHING;
+
+-- Step 3: backfill Booking.service_id + category_id from legacy serviceType
+-- (Java migration recommended — see ServiceTypeBackfillRunner below.)
+
+-- Step 4: drop center_categories AFTER verifying step 2 covered all rows
+-- DROP TABLE center_categories;     -- run as a separate migration
+```
+
+**Java backfill runner** (one-time, idempotent — invoked from a `CommandLineRunner`
+gated by a feature flag in `application-dev.yml`):
+
+```java
+@Component
+@RequiredArgsConstructor
+@Slf4j
+@ConditionalOnProperty(name = "migration.backfill-booking-service", havingValue = "true")
+public class ServiceTypeBackfillRunner implements CommandLineRunner {
+
+    private final BookingRepository bookingRepository;
+    private final ServiceRepository serviceRepository;
+    private final ServiceCategoryRepository categoryRepository;
+
+    @Override
+    @Transactional
+    public void run(String... args) {
+        Map<ServiceType, String> mapping = Map.of(
+            ServiceType.REPAIR,       "REPAIR",
+            ServiceType.MAINTENANCE,  "MAINTENANCE",
+            ServiceType.INSTALLATION, "INSTALLATION",
+            ServiceType.WARRANTY,     "WARRANTY",
+            ServiceType.INSPECTION,   "INSPECTION"
+            // unmapped enum values stay null — handled in app UI as "legacy"
+        );
+
+        bookingRepository.findAllByServiceIdIsNull().forEach(b -> {
+            String code = mapping.get(b.getServiceType());
+            if (code == null) return;
+            serviceRepository.findByCode(code).ifPresent(b::setService);
+            // category derived from booking's center's first category, or null
+            b.setCategory(b.getCenter().getServices().stream()
+                .map(CenterService::getCategory).findFirst().orElse(null));
+        });
+        log.info("Booking backfill complete");
+    }
+}
+```
+
+---
+
+## 📦 New Backend Package: `service/`
+
+```
+service-center/src/main/java/com/maintainance/service_center/service/
+├── Service.java                      # @Entity — global catalog
+├── ServiceRepository.java            # JpaRepository<Service, Integer>
+├── CenterService.java                # @Entity — what a center offers (with pricing)
+├── CenterServiceRepository.java      # JpaRepository<CenterService, Integer>
+├── ServiceController.java            # GET /services, GET /categories/{id}/services
+├── CenterServiceController.java      # GET/POST/PUT/DELETE /centers/my/services
+│                                     # GET /centers/{id}/categories
+│                                     # GET /centers/{id}/categories/{catId}/services
+├── ServiceManagementService.java     # business logic
+├── CreateCenterServiceRequest.java   # categoryId, serviceId, minPrice, maxPrice, ...
+├── UpdateCenterServiceRequest.java   # same fields, all optional except identity
+├── ServiceResponse.java              # id, code, nameAr, nameEn, descriptionAr/En, iconUrl
+├── CenterServiceResponse.java        # id, category{...}, service{...}, pricing fields
+└── ServiceMapper.java                # static toResponse(...)
+```
+
+The `service/` package owns its endpoints. The existing `category/` package is
+**modified** (not replaced) — `ServiceCategory` gains a `@ManyToMany services`
+collection mapped via `category_services`.
+
+The existing `center/` package is **modified**: `MaintenanceCenter` drops its
+`@ManyToMany categories` field; categories are now derived from `center_services`.
+
+---
+
+## 📡 New & Modified Endpoints
+
+All paths under `/api/v1/`. Roles enforced via `@PreAuthorize`.
+
+### Service catalog (public reads, admin writes — admin write deferred to later phase)
+
+```
+GET    /services                                   → List<ServiceResponse>      PUBLIC
+GET    /categories                                 → List<ServiceCategoryResponse>  PUBLIC  (existing)
+GET    /categories/{id}/services                   → List<ServiceResponse>      PUBLIC
+```
+
+### Owner-side: manage their center's services + pricing
+
+```
+GET    /centers/my/services                        → List<CenterServiceResponse>     ROLE_CENTER_OWNER
+POST   /centers/my/services                        → CenterServiceResponse           ROLE_CENTER_OWNER
+        body: { categoryId, serviceId, minPrice?, maxPrice?,
+                typicalDurationMinutes?, descriptionAr?, descriptionEn? }
+PUT    /centers/my/services/{id}                   → CenterServiceResponse           ROLE_CENTER_OWNER
+        body: same fields, all optional
+DELETE /centers/my/services/{id}                   → 204 (soft: is_active=false)     ROLE_CENTER_OWNER
+```
+
+**Validation rules (in `ServiceManagementService`):**
+- `(categoryId, serviceId)` must exist in `category_services` — reject otherwise with
+  a new `BusinessErrorCode` (suggest 400-range, e.g. `400`).
+- `(centerId, categoryId, serviceId)` must be unique — reject duplicates.
+- If `minPrice` set, `maxPrice` must also be set and `>= minPrice`.
+
+### Customer-side: drill-down to book
+
+```
+GET    /centers/{id}/categories                    → List<ServiceCategoryResponse>   AUTHENTICATED
+        # Derived from DISTINCT center_services.category_id
+GET    /centers/{id}/categories/{catId}/services   → List<CenterServiceResponse>     AUTHENTICATED
+        # Filtered: center_services WHERE center=:id AND category=:catId AND is_active=true
+```
+
+### Booking — modified
+
+```
+POST   /bookings
+   body: now requires { centerId, categoryId, serviceId, ... } — old serviceType
+         enum field accepted but @Deprecated; reject if both present and conflicting.
+GET    /bookings/{id}
+   response: BookingResponse gains category{...} and service{...} nested objects
+             (in addition to the deprecated serviceType during transition).
+```
+
+---
+
+## 🛡️ Security Wiring
+
+In `SecurityConfig`:
+- `/services/**` and `/categories/**` (read-only catalog) → `permitAll`
+- `/centers/my/services/**` → `hasRole("CENTER_OWNER")`
+- `/centers/*/categories/**` → `authenticated()`
+
+Service layer enforces row-level: every owner write call resolves the center via
+the existing `findFirstByOwnerId` pattern; staff are NOT permitted to manage
+center services (Owner-only feature).
+
+---
+
+## ✏️ Existing Enums — Update
+
+The `ServiceType` enum stays in the codebase (used by `Booking.serviceType` and
+referenced in older API consumers) but is annotated `@Deprecated` with a Javadoc
+pointer to the new `Service` catalog. Removal in Phase 4 cleanup.
+
+In the "Existing Enums (do not redefine)" line of CLAUDE.md, append a parenthetical:
+
+```
+ServiceType  (@Deprecated since 3.6 — use Service entity FK on Booking)
+```
+
+---
+
+## 🧪 Tests to Add
+
+- `ServiceManagementServiceTest` — invalid `(categoryId, serviceId)` pair rejected
+- `ServiceManagementServiceTest` — duplicate `(center, category, service)` rejected
+- `ServiceManagementServiceTest` — `minPrice > maxPrice` rejected
+- `CenterServiceControllerTest` — owner can create/read/update/delete their own;
+  cannot affect another center's services (returns 403/404)
+- `BookingServiceTest` — new bookings require both `categoryId` and `serviceId`;
+  reject if `(category, service)` pair not in target center's `center_services`
+- `ServiceTypeBackfillRunnerTest` — runs idempotently; existing `service_id` rows
+  not overwritten
+
+---
+
+## 🚀 Phase Tracker — Append
+
+```
+### Phase 3.6 — Category → Service Hierarchy ⏳ Pending
+- [ ] Update AdminSeeder: drop REPAIR/INSTALLATION/EMERGENCY rows from service_categories
+- [ ] Update AdminSeeder: seed Service catalog (7 rows)
+- [ ] Update AdminSeeder: seed category_services mapping
+- [ ] Service entity + ServiceRepository
+- [ ] CenterService entity + CenterServiceRepository (replaces planned CenterServicePricing)
+- [ ] ServiceCategory: add @ManyToMany services field
+- [ ] MaintenanceCenter: remove @ManyToMany categories; add @OneToMany centerServices
+- [ ] Booking: add service_id, category_id FKs (nullable); deprecate serviceType
+- [ ] ServiceController + endpoints (catalog reads)
+- [ ] CenterServiceController + endpoints (owner CRUD, customer drill-down)
+- [ ] BookingService: validate (categoryId, serviceId) on creation
+- [ ] ServiceTypeBackfillRunner (gated by migration.backfill-booking-service flag)
+- [ ] center_services backfill SQL (one-shot from center_categories)
+- [ ] Drop center_categories table (separate migration, after backfill verified)
+- [ ] Integration tests (see "Tests to Add" section above)
+- [ ] Update Swagger docs / OpenAPI annotations
+```
+
+---
+
+## 🧹 Required Cleanup Edits to Existing CLAUDE.md
+
+1. **In "Phase 3.5+ New Tables (upcoming migrations)"**: delete entry **#3
+   `Center Service Pricing`** — superseded by `center_services` here.
+
+2. **In "Planned packages (Phase 3.5+)"**: delete the `pricing/` package line —
+   pricing now lives in the `service/` package as part of `CenterService`.
+
+3. **In "All Tables Now in DB"**: after this phase ships, remove
+   `center_categories` from the active-tables list.

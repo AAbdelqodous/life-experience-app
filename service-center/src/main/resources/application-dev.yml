@@ -49,3 +49,6 @@ application:
       - image/png
       - image/jpg
 
+migration:
+  backfill-booking-service: false
+

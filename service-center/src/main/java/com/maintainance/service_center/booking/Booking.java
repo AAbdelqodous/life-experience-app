@@ -1,8 +1,10 @@
 package com.maintainance.service_center.booking;
 
+import com.maintainance.service_center.category.ServiceCategory;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.progress.WorkStage;
 import com.maintainance.service_center.review.Review;
+import com.maintainance.service_center.service.Service;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -53,8 +55,18 @@ public class Booking {
     @Column(nullable = false)
     private BookingStatus bookingStatus = BookingStatus.PENDING;
 
+    /** @deprecated since Phase 3.6 — use {@link #service} FK. Scheduled for removal in Phase 4 cleanup. */
+    @Deprecated
     @Enumerated(EnumType.STRING)
     private ServiceType serviceType;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "service_id")
+    private Service service;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "category_id")
+    private ServiceCategory category;
 
     @Column(length = 500)
     private String serviceDescription;

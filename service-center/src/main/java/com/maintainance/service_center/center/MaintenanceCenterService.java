@@ -3,7 +3,12 @@ package com.maintainance.service_center.center;
 import com.maintainance.service_center.address.Address;
 import com.maintainance.service_center.category.ServiceCategory;
 import com.maintainance.service_center.category.ServiceCategoryRepository;
+import com.maintainance.service_center.category.ServiceCategoryResponse;
 import com.maintainance.service_center.config.FileStorageService;
+import com.maintainance.service_center.service.CenterService;
+import com.maintainance.service_center.service.CenterServiceRepository;
+import com.maintainance.service_center.service.CenterServiceResponse;
+import com.maintainance.service_center.service.ServiceManagementService;
 import com.maintainance.service_center.staff.CenterMembership;
 import com.maintainance.service_center.staff.CenterMembershipRepository;
 import com.maintainance.service_center.staff.CenterRole;
@@ -22,6 +27,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
@@ -34,6 +40,8 @@ public class MaintenanceCenterService {
     private final ServiceCategoryRepository categoryRepository;
     private final FileStorageService fileStorageService;
     private final CenterMembershipRepository membershipRepository;
+    private final CenterServiceRepository centerServiceRepository;
+    private final ServiceManagementService serviceManagementService;
 
     @Transactional
     public MaintenanceCenterResponse create(MaintenanceCenterRequest request, User owner) {
@@ -41,7 +49,10 @@ public class MaintenanceCenterService {
             throw new IllegalArgumentException("A center with this email already exists");
         }
 
-        List<ServiceCategory> categories = resolveCategories(request.getCategoryIds());
+        if (request.getCategoryIds() != null && !request.getCategoryIds().isEmpty()) {
+            log.warn("Phase 3.6: categoryIds in MaintenanceCenterRequest is deprecated; " +
+                     "use POST /centers/my/services instead. Ignored for new center.");
+        }
 
         MaintenanceCenter center = MaintenanceCenter.builder()
                 .nameAr(request.getNameAr())
@@ -61,15 +72,14 @@ public class MaintenanceCenterService {
                 .logoUrl(request.getLogoUrl())
                 .imageUrls(request.getImageUrls() != null ? request.getImageUrls() : new ArrayList<>())
                 .certifications(request.getCertifications() != null ? request.getCertifications() : new ArrayList<>())
-                .categories(categories)
+                .categories(new ArrayList<>())
                 .owner(owner)
                 .isVerified(false)
                 .isActive(true)
                 .build();
 
         centerRepository.save(center);
-        
-        // Create owner membership
+
         CenterMembership ownerMembership = CenterMembership.builder()
                 .user(owner)
                 .center(center)
@@ -78,8 +88,8 @@ public class MaintenanceCenterService {
                 .activatedAt(LocalDateTime.now())
                 .build();
         membershipRepository.save(ownerMembership);
-        
-        log.info("Created maintenance center id={} by owner id={} with owner membership id={}", 
+
+        log.info("Created maintenance center id={} by owner id={} with owner membership id={}",
                 center.getId(), owner.getId(), ownerMembership.getId());
         return toResponse(center);
     }
@@ -164,6 +174,33 @@ public class MaintenanceCenterService {
         return centerRepository.findByCategoryId(categoryId, pageable).map(this::toSummaryResponse);
     }
 
+    public List<ServiceCategoryResponse> findCenterCategories(Long centerId) {
+        getActiveCenter(centerId);
+        return centerServiceRepository.findDistinctCategoriesByCenterId(centerId)
+                .stream()
+                .map(cat -> ServiceCategoryResponse.builder()
+                        .id(cat.getId())
+                        .code(cat.getCode())
+                        .nameAr(cat.getNameAr())
+                        .nameEn(cat.getNameEn())
+                        .descriptionAr(cat.getDescriptionAr())
+                        .descriptionEn(cat.getDescriptionEn())
+                        .iconUrl(cat.getIconUrl())
+                        .displayOrder(cat.getDisplayOrder())
+                        .isActive(cat.getIsActive())
+                        .build())
+                .toList();
+    }
+
+    public List<CenterServiceResponse> findCenterCategoryServices(Long centerId, Long catId) {
+        getActiveCenter(centerId);
+        return centerServiceRepository
+                .findByCenterIdAndCategoryIdAndIsActiveTrueOrderByServiceIdAsc(centerId, catId)
+                .stream()
+                .map(serviceManagementService::toResponse)
+                .toList();
+    }
+
     @Transactional
     public MaintenanceCenterResponse update(Long id, MaintenanceCenterRequest request, User caller) {
         MaintenanceCenter center = getActiveCenter(id);
@@ -173,7 +210,10 @@ public class MaintenanceCenterService {
             throw new IllegalArgumentException("A center with this email already exists");
         }
 
-        List<ServiceCategory> categories = resolveCategories(request.getCategoryIds());
+        if (request.getCategoryIds() != null && !request.getCategoryIds().isEmpty()) {
+            log.warn("Phase 3.6: categoryIds in MaintenanceCenterRequest is deprecated; " +
+                     "use POST /centers/my/services instead. Ignored for center id={}", id);
+        }
 
         center.setNameAr(request.getNameAr());
         center.setNameEn(request.getNameEn());
@@ -193,7 +233,6 @@ public class MaintenanceCenterService {
         center.setLogoUrl(request.getLogoUrl());
         center.setImageUrls(request.getImageUrls() != null ? request.getImageUrls() : new ArrayList<>());
         center.setCertifications(request.getCertifications() != null ? request.getCertifications() : new ArrayList<>());
-        center.setCategories(categories);
 
         centerRepository.save(center);
         log.info("Updated maintenance center id={}", id);
@@ -245,17 +284,6 @@ public class MaintenanceCenterService {
         }
     }
 
-    private List<ServiceCategory> resolveCategories(List<Long> categoryIds) {
-        if (categoryIds == null || categoryIds.isEmpty()) {
-            throw new IllegalArgumentException("At least one category is required");
-        }
-        List<ServiceCategory> categories = categoryRepository.findAllById(categoryIds);
-        if (categories.size() != categoryIds.size()) {
-            throw new EntityNotFoundException("One or more categories not found");
-        }
-        return categories;
-    }
-
     private Address mapAddress(com.maintainance.service_center.address.AddressRequest req) {
         if (req == null) return null;
         Address address = new Address();
@@ -296,20 +324,41 @@ public class MaintenanceCenterService {
                 .isActive(c.getIsActive())
                 .ownerId(c.getOwner().getId())
                 .ownerName(c.getOwner().fullName())
-                .categories(c.getCategories().stream().map(cat ->
-                        MaintenanceCenterResponse.CategorySummary.builder()
-                                .id(cat.getId())
-                                .nameAr(cat.getNameAr())
-                                .nameEn(cat.getNameEn())
-                                .code(cat.getCode())
-                                .build()
-                ).toList())
+                .categories(deriveCategorySummaries(c))
                 .specializations(c.getSpecializations())
                 .logoUrl(c.getLogoUrl())
                 .imageUrls(c.getImageUrls())
                 .certifications(c.getCertifications())
                 .createdAt(c.getCreatedAt())
                 .build();
+    }
+
+    private List<MaintenanceCenterResponse.CategorySummary> deriveCategorySummaries(MaintenanceCenter c) {
+        List<CenterService> centerServices = c.getCenterServices();
+        if (centerServices != null && !centerServices.isEmpty()) {
+            return centerServices.stream()
+                    .filter(cs -> Boolean.TRUE.equals(cs.getIsActive()))
+                    .map(CenterService::getCategory)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .sorted(Comparator.comparing(ServiceCategory::getDisplayOrder,
+                            Comparator.nullsLast(Comparator.naturalOrder())))
+                    .map(cat -> MaintenanceCenterResponse.CategorySummary.builder()
+                            .id(cat.getId())
+                            .nameAr(cat.getNameAr())
+                            .nameEn(cat.getNameEn())
+                            .code(cat.getCode())
+                            .build())
+                    .toList();
+        }
+        return c.getCategories().stream()
+                .map(cat -> MaintenanceCenterResponse.CategorySummary.builder()
+                        .id(cat.getId())
+                        .nameAr(cat.getNameAr())
+                        .nameEn(cat.getNameEn())
+                        .code(cat.getCode())
+                        .build())
+                .toList();
     }
 
     private MaintenanceCenterSummaryResponse toSummaryResponse(MaintenanceCenter c) {
@@ -321,7 +370,7 @@ public class MaintenanceCenterService {
                 .nameEn(c.getNameEn())
                 .cityAr(cityAr)
                 .cityEn(cityEn)
-                .averageRating(c.getAverageRating() != null? c.getAverageRating().doubleValue() : null)
+                .averageRating(c.getAverageRating() != null ? c.getAverageRating().doubleValue() : null)
                 .totalReviews(c.getTotalReviews())
                 .isVerified(c.getIsVerified())
                 .isActive(c.getIsActive())

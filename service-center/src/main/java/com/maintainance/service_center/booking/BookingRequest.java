@@ -32,7 +32,11 @@ public class BookingRequest {
     @JsonDeserialize(using = LocalTimeDeserializer.class)
     private LocalTime estimatedEndTime;
 
-    @NotNull(message = "Service type is required")
+    private Long categoryId;
+    private Long serviceId;
+
+    /** @deprecated since Phase 3.6 — use categoryId + serviceId. Accepted during transition window. */
+    @Deprecated
     private ServiceType serviceType;
 
     private String serviceDescription;

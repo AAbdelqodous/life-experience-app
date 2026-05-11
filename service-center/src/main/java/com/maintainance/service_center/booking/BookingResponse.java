@@ -57,6 +57,26 @@ public class BookingResponse {
     private Boolean pickupRequired;
     private String pickupAddress;
     private WorkStage currentWorkStage;
+    private ServiceSummary serviceSummary;
+    private CategorySummary categorySummary;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    @Getter
+    @Builder
+    public static class ServiceSummary {
+        private Long id;
+        private String code;
+        private String nameAr;
+        private String nameEn;
+    }
+
+    @Getter
+    @Builder
+    public static class CategorySummary {
+        private Long id;
+        private String code;
+        private String nameAr;
+        private String nameEn;
+    }
 }

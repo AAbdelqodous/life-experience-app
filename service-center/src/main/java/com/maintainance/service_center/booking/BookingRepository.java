@@ -88,6 +88,10 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @Query("SELECT COUNT(b) FROM Booking b WHERE b.createdAt >= :startDate AND b.createdAt <= :endDate")
     long countByCreatedAtBetween(@Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
 
+    // Migration: find bookings that have a legacy serviceType but no service FK yet
+    @Query("SELECT b FROM Booking b WHERE b.service IS NULL AND b.serviceType IS NOT NULL")
+    List<Booking> findAllUnmigratedBookings();
+
     // Admin bookings view method
     @Query("SELECT b FROM Booking b WHERE " +
            "(:status IS NULL OR b.bookingStatus = :status) AND " +

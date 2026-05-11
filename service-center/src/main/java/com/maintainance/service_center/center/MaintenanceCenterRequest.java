@@ -57,6 +57,5 @@ public class MaintenanceCenterRequest {
     private List<String> imageUrls;
     private List<String> certifications;
 
-    @NotNull(message = "At least one category is required")
     private List<Long> categoryIds;
 }
