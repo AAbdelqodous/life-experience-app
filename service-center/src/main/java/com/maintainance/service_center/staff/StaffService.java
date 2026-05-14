@@ -4,6 +4,7 @@ import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
 import com.maintainance.service_center.email.EmailService;
 import com.maintainance.service_center.handler.BusinessErrorCodes;
+import com.maintainance.service_center.role.RoleRepository;
 import com.maintainance.service_center.user.TokenRepository;
 import com.maintainance.service_center.user.User;
 import com.maintainance.service_center.user.UserRepository;
@@ -32,6 +33,7 @@ public class StaffService {
     private final StaffInvitationRepository invitationRepository;
     private final MaintenanceCenterRepository centerRepository;
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final EmailService emailService;
     private final TokenRepository tokenRepository;
 
@@ -279,10 +281,13 @@ public class StaffService {
             tokenRepository.deleteAllByUser(user);
         }
 
-        // Mark as STAFF regardless of previous user type
+        // Mark as STAFF and assign ROLE_STAFF regardless of previous user type
+        var staffRole = roleRepository.findByName("ROLE_STAFF")
+                .orElseThrow(() -> new IllegalStateException("ROLE_STAFF was not initialized"));
         user.setUserType(com.maintainance.service_center.user.UserType.STAFF);
+        user.setRoles(List.of(staffRole));
         userRepository.save(user);
-        log.info("Set user {} type to STAFF on invitation acceptance", user.getId());
+        log.info("Set user {} type to STAFF and assigned ROLE_STAFF on invitation acceptance", user.getId());
 
         // Create membership
         CenterMembership membership = CenterMembership.builder()

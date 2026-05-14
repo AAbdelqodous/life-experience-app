@@ -15,7 +15,7 @@ import java.util.List;
 @RestController
 @RequestMapping("centers/my/services")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('CENTER_OWNER')")
+@PreAuthorize("hasAnyRole('OWNER', 'STAFF')")
 @Tag(name = "Center Services")
 public class CenterServiceController {
 

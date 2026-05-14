@@ -47,9 +47,6 @@ public class AuthenticationService {
     public void register(RegistrationRequest request) throws MessagingException {
         log.info("Registering new user with email: {}", request.getEmail());
 
-        var userRole = roleRepository.findByName("USER")
-                .orElseThrow(() -> new IllegalArgumentException("Role USER was not initialized"));
-
         if (userRepository.findByEmail(request.getEmail()).isPresent()) {
             throw new IllegalStateException("An account with this email address already exists.");
         }
@@ -58,6 +55,8 @@ public class AuthenticationService {
 
         // STAFF: activate immediately, no OTP, no admin approval needed
         if (userType == UserType.STAFF) {
+            var role = roleRepository.findByName("ROLE_STAFF")
+                    .orElseThrow(() -> new IllegalArgumentException("ROLE_STAFF was not initialized"));
             var user = User.builder()
                     .firstname(request.getFirstname())
                     .lastname(request.getLastname())
@@ -67,7 +66,7 @@ public class AuthenticationService {
                     .enabled(true)
                     .userType(userType)
                     .approvalStatus(null)
-                    .roles(List.of(userRole))
+                    .roles(List.of(role))
                     .build();
 
             userRepository.save(user);
@@ -77,6 +76,8 @@ public class AuthenticationService {
 
         // CUSTOMER: OTP email verification required, no admin approval
         if (userType == UserType.CUSTOMER) {
+            var role = roleRepository.findByName("USER")
+                    .orElseThrow(() -> new IllegalArgumentException("Role USER was not initialized"));
             var user = User.builder()
                     .firstname(request.getFirstname())
                     .lastname(request.getLastname())
@@ -86,7 +87,7 @@ public class AuthenticationService {
                     .enabled(false)
                     .userType(userType)
                     .approvalStatus(null)
-                    .roles(List.of(userRole))
+                    .roles(List.of(role))
                     .build();
 
             userRepository.save(user);
@@ -95,8 +96,9 @@ public class AuthenticationService {
             return;
         }
 
-        // OWNER: existing OTP + approval flow unchanged
-        ApprovalStatus approvalStatus = ApprovalStatus.PENDING_APPROVAL;
+        // OWNER: OTP + admin approval flow
+        var role = roleRepository.findByName("ROLE_OWNER")
+                .orElseThrow(() -> new IllegalArgumentException("ROLE_OWNER was not initialized"));
 
         var user = User.builder()
                 .firstname(request.getFirstname())
@@ -106,8 +108,8 @@ public class AuthenticationService {
                 .accountLocked(false)
                 .enabled(false)
                 .userType(userType)
-                .approvalStatus(approvalStatus)
-                .roles(List.of(userRole))
+                .approvalStatus(ApprovalStatus.PENDING_APPROVAL)
+                .roles(List.of(role))
                 .build();
 
         userRepository.save(user);

@@ -17,6 +17,16 @@ import java.util.Set;
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ExceptionResponse> handleBusinessException(BusinessException ex) {
+        BusinessErrorCodes code = ex.getErrorCode();
+        ExceptionResponse response = ExceptionResponse.builder()
+                .businessErrorCode(code.getCode())
+                .businessErrorDescription(code.getDescription())
+                .build();
+        return new ResponseEntity<>(response, code.getHttpStatus());
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ExceptionResponse> handleIllegalArgumentException(IllegalArgumentException ex) {
         ExceptionResponse response = ExceptionResponse.builder()

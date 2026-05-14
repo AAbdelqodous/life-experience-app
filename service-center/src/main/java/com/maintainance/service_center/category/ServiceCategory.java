@@ -1,5 +1,6 @@
 package com.maintainance.service_center.category;
 
+import com.maintainance.service_center.booking.ServiceType;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.service.Service;
 import jakarta.persistence.*;
@@ -61,6 +62,16 @@ public class ServiceCategory {
             inverseJoinColumns = @JoinColumn(name = "service_id")
     )
     private Set<Service> services = new HashSet<>();
+
+    @Builder.Default
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "category_allowed_service_types",
+            joinColumns = @JoinColumn(name = "category_id")
+    )
+    @Column(name = "service_type")
+    @Enumerated(EnumType.STRING)
+    private Set<ServiceType> allowedServiceTypes = new HashSet<>();
 
     @CreatedDate
     @Column(nullable = false, updatable = false)

@@ -38,9 +38,15 @@ public class AdminSeeder implements ApplicationRunner {
     }
 
     private void seedAdminRole() {
-        if (roleRepository.findByName("ROLE_ADMIN").isEmpty()) {
-            roleRepository.save(Role.builder().name("ROLE_ADMIN").build());
-            log.info("Seeded ROLE_ADMIN");
+        seedRole("ROLE_ADMIN");
+        seedRole("ROLE_OWNER");
+        seedRole("ROLE_STAFF");
+    }
+
+    private void seedRole(String name) {
+        if (roleRepository.findByName(name).isEmpty()) {
+            roleRepository.save(Role.builder().name(name).build());
+            log.info("Seeded {}", name);
         }
     }
 

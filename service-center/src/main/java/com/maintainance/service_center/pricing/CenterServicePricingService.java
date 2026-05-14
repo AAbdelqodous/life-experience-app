@@ -1,7 +1,11 @@
 package com.maintainance.service_center.pricing;
 
+import com.maintainance.service_center.booking.ServiceType;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
+import com.maintainance.service_center.handler.BusinessErrorCodes;
+import com.maintainance.service_center.handler.BusinessException;
+import com.maintainance.service_center.service.CenterService;
 import com.maintainance.service_center.staff.CenterMembershipRepository;
 import com.maintainance.service_center.staff.MembershipStatus;
 import com.maintainance.service_center.user.User;
@@ -37,6 +41,7 @@ public class CenterServicePricingService {
         }
 
         MaintenanceCenter center = getOwnerCenter(owner);
+        assertServiceTypeAllowedForCenter(center, request.getServiceType());
 
         if (pricingRepository.existsByCenterIdAndServiceTypeAndServiceNameEn(
                 center.getId(), request.getServiceType(), request.getServiceNameEn())) {
@@ -68,6 +73,7 @@ public class CenterServicePricingService {
         }
 
         MaintenanceCenter center = getOwnerCenter(owner);
+        assertServiceTypeAllowedForCenter(center, request.getServiceType());
 
         if (pricingRepository.existsByCenterIdAndServiceTypeAndServiceNameEnAndIdNot(
                 center.getId(), request.getServiceType(), request.getServiceNameEn(), id)) {
@@ -107,6 +113,17 @@ public class CenterServicePricingService {
         log.info("Deleted pricing entry {} for center {}", id, center.getId());
     }
     
+    private void assertServiceTypeAllowedForCenter(MaintenanceCenter center, ServiceType serviceType) {
+        boolean allowed = center.getCenterServices().stream()
+                .filter(cs -> Boolean.TRUE.equals(cs.getIsActive()))
+                .map(CenterService::getCategory)
+                .flatMap(c -> c.getAllowedServiceTypes().stream())
+                .anyMatch(t -> t == serviceType);
+        if (!allowed) {
+            throw new BusinessException(BusinessErrorCodes.SERVICE_TYPE_NOT_ALLOWED_FOR_CENTER);
+        }
+    }
+
     private MaintenanceCenter getOwnerCenter(User user) {
         return centerRepository.findFirstByOwnerId(user.getId())
                 .or(() -> membershipRepository

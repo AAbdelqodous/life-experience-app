@@ -14,7 +14,16 @@
       "Bash(export JAVA_HOME)",
       "Bash(export PATH=\"$JAVA_HOME/bin:$PATH\")",
       "Bash(JAVA_HOME=\"/c/Program Files/Java/jdk-21\" mvn test -q)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(dir \"C:\\\\Program Files\\\\Java\")",
+      "Bash(dir \"C:\\\\Program Files\\\\Eclipse Adoptium\")",
+      "Bash(dir \"C:\\\\Program Files\\\\Microsoft\")",
+      "Bash(findstr /i \"jdk java\")",
+      "Bash(PGPASSWORD='P@ssw0rd' psql *)",
+      "Bash(docker exec le-postgres *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }
