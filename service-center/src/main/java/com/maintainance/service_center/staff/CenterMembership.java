@@ -1,6 +1,7 @@
 package com.maintainance.service_center.staff;
 
 import com.maintainance.service_center.center.MaintenanceCenter;
+import com.maintainance.service_center.department.Department;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -9,6 +10,8 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Getter
 @Setter
@@ -45,6 +48,19 @@ public class CenterMembership {
 
     @Column(name = "activated_at")
     private LocalDateTime activatedAt;
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "department_memberships",
+        joinColumns = @JoinColumn(name = "membership_id"),
+        inverseJoinColumns = @JoinColumn(name = "department_id")
+    )
+    @Builder.Default
+    private List<Department> departments = new ArrayList<>();
+
+    public List<Long> getDepartmentIds() {
+        return departments.stream().map(Department::getId).toList();
+    }
 
     @CreatedDate
     @Column(nullable = false, updatable = false)

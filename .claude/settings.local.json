@@ -23,7 +23,9 @@
       "Bash(docker exec le-postgres *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ahmed.elsayed\\\\MaintenanceCenters\\\\maintenance-center-app\" -Recurse -Directory)",
+      "Bash(Select-Object -First 20)"
     ]
   }
 }

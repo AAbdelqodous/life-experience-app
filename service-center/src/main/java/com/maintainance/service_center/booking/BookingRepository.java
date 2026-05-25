@@ -1,12 +1,17 @@
 package com.maintainance.service_center.booking;
 
+import com.maintainance.service_center.center.MaintenanceCenter;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import jakarta.persistence.QueryHint;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -91,6 +96,25 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     // Migration: find bookings that have a legacy serviceType but no service FK yet
     @Query("SELECT b FROM Booking b WHERE b.service IS NULL AND b.serviceType IS NOT NULL")
     List<Booking> findAllUnmigratedBookings();
+
+    // Queue endpoint — claimable bookings filtered by department
+    @Query("""
+        SELECT b FROM Booking b
+        WHERE b.center = :center
+          AND b.department.id IN :departmentIds
+          AND b.assignedMembership IS NULL
+          AND b.bookingStatus IN ('CONFIRMED', 'RESCHEDULED')
+        ORDER BY b.bookingDate ASC, b.bookingTime ASC
+        """)
+    Page<Booking> findClaimableByDepartments(
+            @Param("center") MaintenanceCenter center,
+            @Param("departmentIds") List<Long> departmentIds,
+            Pageable pageable);
+
+    // Claim endpoint — pessimistic lock prevents double-assignment
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "3000"))
+    Optional<Booking> findWithLockById(Long id);
 
     // Admin bookings view method
     @Query("SELECT b FROM Booking b WHERE " +

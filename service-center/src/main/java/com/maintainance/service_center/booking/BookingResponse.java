@@ -59,6 +59,11 @@ public class BookingResponse {
     private WorkStage currentWorkStage;
     private ServiceSummary serviceSummary;
     private CategorySummary categorySummary;
+    private Long assignedMembershipId;
+    private String assignedStaffName;
+    private Long departmentId;
+    private String departmentNameAr;
+    private String departmentNameEn;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

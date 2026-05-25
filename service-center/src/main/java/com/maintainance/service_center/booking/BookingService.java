@@ -6,11 +6,16 @@ import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
 import com.maintainance.service_center.service.CenterService;
 import com.maintainance.service_center.service.CenterServiceRepository;
+import com.maintainance.service_center.staff.CenterMembership;
+import com.maintainance.service_center.staff.CenterMembershipRepository;
+import com.maintainance.service_center.staff.CenterRole;
+import com.maintainance.service_center.staff.MembershipStatus;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -19,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -30,6 +36,11 @@ public class BookingService {
     private final MaintenanceCenterRepository centerRepository;
     private final CenterResolverService centerResolver;
     private final CenterServiceRepository centerServiceRepository;
+    private final CenterMembershipRepository membershipRepository;
+    private final BookingClaimAuditRepository claimAuditRepository;
+
+    private static final Set<BookingStatus> CLAIMABLE_STATUSES = Set.of(
+            BookingStatus.CONFIRMED, BookingStatus.RESCHEDULED);
 
     public Page<BookingResponse> findByCustomer(User customer, Pageable pageable) {
         return bookingRepository.findByCustomer_IdOrderByCreatedAtDesc(customer.getId(), pageable)
@@ -394,8 +405,107 @@ public class BookingService {
                                 .nameEn(booking.getCategory().getNameEn())
                                 .build()
                         : null)
+                .assignedMembershipId(booking.getAssignedMembership() != null
+                        ? booking.getAssignedMembership().getId() : null)
+                .assignedStaffName(booking.getAssignedMembership() != null
+                        ? booking.getAssignedMembership().getUser().fullName() : null)
+                .departmentId(booking.getDepartment() != null
+                        ? booking.getDepartment().getId() : null)
+                .departmentNameAr(booking.getDepartment() != null
+                        ? booking.getDepartment().getNameAr() : null)
+                .departmentNameEn(booking.getDepartment() != null
+                        ? booking.getDepartment().getNameEn() : null)
                 .createdAt(booking.getCreatedAt())
                 .updatedAt(booking.getUpdatedAt())
                 .build();
+    }
+
+    public BookingQueueResponse getQueue(User caller, Pageable pageable) {
+        CenterMembership membership = resolveActiveMembership(caller);
+
+        if (membership.getRole() != CenterRole.TECHNICIAN) {
+            throw new AccessDeniedException("CLAIM_BOOKING permission required");
+        }
+
+        List<Long> departmentIds = membership.getDepartmentIds();
+        if (departmentIds.isEmpty()) {
+            return BookingQueueResponse.builder()
+                    .content(List.of())
+                    .totalElements(0)
+                    .totalPages(0)
+                    .number(0)
+                    .size(pageable.getPageSize())
+                    .first(true)
+                    .last(true)
+                    .noDepartmentMembership(true)
+                    .build();
+        }
+
+        Page<Booking> page = bookingRepository.findClaimableByDepartments(
+                membership.getCenter(), departmentIds, pageable);
+
+        return BookingQueueResponse.builder()
+                .content(page.getContent().stream().map(this::toResponse).toList())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .number(page.getNumber())
+                .size(page.getSize())
+                .first(page.isFirst())
+                .last(page.isLast())
+                .noDepartmentMembership(false)
+                .build();
+    }
+
+    @Transactional
+    public BookingResponse claim(Long bookingId, User caller) {
+        CenterMembership membership = resolveActiveMembership(caller);
+
+        if (membership.getRole() != CenterRole.TECHNICIAN) {
+            throw new AccessDeniedException("CLAIM_BOOKING permission required");
+        }
+
+        // Precondition 1 — membership must be active
+        if (membership.getStatus() != MembershipStatus.ACTIVE) {
+            throw new IllegalStateException("STAFF_INACTIVE");
+        }
+
+        // Preconditions 2+3 — outside lock (optimistic check)
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new IllegalStateException("BOOKING_NOT_CLAIMABLE"));
+        if (!CLAIMABLE_STATUSES.contains(booking.getBookingStatus())) {
+            throw new IllegalStateException("BOOKING_NOT_CLAIMABLE");
+        }
+
+        // Acquire pessimistic write lock for concurrent-safe checks
+        Booking locked = bookingRepository.findWithLockById(bookingId)
+                .orElseThrow(() -> new IllegalStateException("BOOKING_NOT_CLAIMABLE"));
+
+        // Precondition 4 — already claimed (under lock)
+        if (locked.getAssignedMembership() != null) {
+            throw new IllegalStateException("BOOKING_ALREADY_CLAIMED");
+        }
+
+        // Precondition 5 — department match (under lock)
+        if (locked.getDepartment() == null
+                || !membership.getDepartmentIds().contains(locked.getDepartment().getId())) {
+            throw new IllegalStateException("WRONG_DEPARTMENT");
+        }
+
+        locked.setAssignedMembership(membership);
+        claimAuditRepository.save(BookingClaimAudit.builder()
+                .booking(locked)
+                .membershipId(membership.getId())
+                .userId(caller.getId().longValue())
+                .departmentId(locked.getDepartment().getId())
+                .build());
+
+        return toResponse(locked);
+    }
+
+    private CenterMembership resolveActiveMembership(User caller) {
+        return membershipRepository.findByUserIdAndStatus(caller.getId(), MembershipStatus.ACTIVE)
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("STAFF_INACTIVE"));
     }
 }

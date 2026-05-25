@@ -133,6 +133,25 @@ public class BookingController {
         return ResponseEntity.ok(service.cancel(id, request, caller));
     }
 
+    @GetMapping("/queue")
+    @Operation(summary = "Get department booking queue", description = "Returns unassigned claimable bookings for the caller's department(s). Requires TECHNICIAN role.")
+    public ResponseEntity<BookingQueueResponse> getQueue(
+            @AuthenticationPrincipal User caller,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return ResponseEntity.ok(service.getQueue(caller, org.springframework.data.domain.PageRequest.of(page, size)));
+    }
+
+    @PostMapping("/{id}/claim")
+    @Operation(summary = "Claim a booking", description = "Assigns an unassigned booking to the calling technician atomically.")
+    public ResponseEntity<BookingResponse> claimBooking(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.claim(id, caller));
+    }
+
     @GetMapping("/{id}/photos")
     @Operation(summary = "Get booking photos", description = "Get customer-visible photos for a booking")
     public ResponseEntity<List<BookingMediaResponse>> getBookingPhotos(

@@ -2,9 +2,11 @@ package com.maintainance.service_center.booking;
 
 import com.maintainance.service_center.category.ServiceCategory;
 import com.maintainance.service_center.center.MaintenanceCenter;
+import com.maintainance.service_center.department.Department;
 import com.maintainance.service_center.progress.WorkStage;
 import com.maintainance.service_center.review.Review;
 import com.maintainance.service_center.service.Service;
+import com.maintainance.service_center.staff.CenterMembership;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -131,6 +133,14 @@ public class Booking {
     @Enumerated(EnumType.STRING)
     @Column(length = 50)
     private WorkStage workStage;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
+    private Department department;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_membership_id")
+    private CenterMembership assignedMembership;
 
     @CreatedDate
     @Column(nullable = false, updatable = false)

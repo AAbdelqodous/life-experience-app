@@ -59,12 +59,24 @@ public class StaffService {
         MaintenanceCenter center = getCallerCenter(caller);
         checkCanInviteStaff(center, caller);
 
-        // Check if there's already a pending invitation for this email
-        List<InvitationStatus> pendingStatuses = List.of(InvitationStatus.PENDING);
+        // Check if there's already a pending invitation for this email.
+        // Expire any stale ones first so a re-invite is allowed after the window passes.
         List<StaffInvitation> existingInvitations = invitationRepository.findByCenterIdAndTargetEmailAndStatusIn(
-                center.getId(), request.getTargetEmail(), pendingStatuses);
+                center.getId(), request.getTargetEmail(), List.of(InvitationStatus.PENDING));
 
-        if (!existingInvitations.isEmpty()) {
+        LocalDateTime now = LocalDateTime.now();
+        List<StaffInvitation> stillPending = existingInvitations.stream()
+                .filter(inv -> {
+                    if (inv.getExpiresAt().isBefore(now)) {
+                        inv.setStatus(InvitationStatus.EXPIRED);
+                        invitationRepository.save(inv);
+                        return false;
+                    }
+                    return true;
+                })
+                .toList();
+
+        if (!stillPending.isEmpty()) {
             throw new IllegalArgumentException("A pending invitation already exists for this email");
         }
 
