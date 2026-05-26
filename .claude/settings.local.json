@@ -28,7 +28,12 @@
       "Bash(Select-Object -First 20)",
       "Bash(chmod +x /home/abdelqodous/MaintenanceCenter/life-experience-app/service-center/mvnw)",
       "Bash(git commit:*)",
-      "Bash(git remote:*)"
+      "Bash(git remote:*)",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(git checkout:*)",
+      "Bash(awk '{print $1}')",
+      "Bash(grep -v -E '^\\(OWNER|BRANCH_MANAGER|RECEPTIONIST|TECHNICIAN|ACCOUNTANT|INVITED|INVITATION_EXPIRED|INVITATION_DECLINED|ACTIVE|SUSPENDED|REMOVED|PENDING|REDEEMED|DECLINED|EXPIRED|CANCELLED|CUSTOMER|ADMIN\\)$')"
     ]
   }
 }
