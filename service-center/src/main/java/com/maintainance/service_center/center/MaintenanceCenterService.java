@@ -133,6 +133,27 @@ public class MaintenanceCenterService {
     }
 
     @Transactional
+    public MaintenanceCenterResponse deleteImage(String imageUrl, User caller) {
+        MaintenanceCenter center = centerRepository.findByOwnerIdAndIsActiveTrue(caller.getId(), PageRequest.of(0, 1))
+                .getContent()
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("No active center found for this owner"));
+
+        if (center.getImageUrls() == null || !center.getImageUrls().remove(imageUrl)) {
+            throw new EntityNotFoundException("Image not found: " + imageUrl);
+        }
+        centerRepository.save(center);
+
+        // Delete the physical file
+        String fileName = imageUrl.substring(imageUrl.lastIndexOf('/') + 1);
+        fileStorageService.deleteFile(fileName);
+
+        log.info("Image deleted for center id={}: {}", center.getId(), imageUrl);
+        return toResponse(center);
+    }
+
+    @Transactional
     public MaintenanceCenterResponse uploadLogo(MultipartFile file, User owner) {
         MaintenanceCenter center = centerRepository.findByOwnerIdAndIsActiveTrue(owner.getId(), PageRequest.of(0, 1))
                 .getContent()

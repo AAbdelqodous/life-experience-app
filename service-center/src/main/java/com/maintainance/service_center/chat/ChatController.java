@@ -60,6 +60,26 @@ public class ChatController {
         return ResponseEntity.ok(chatService.getConversationMessages(id, user, page, size));
     }
 
+    @PutMapping("/{id}/read")
+    @Operation(summary = "Mark conversation as read")
+    public ResponseEntity<Void> markConversationAsRead(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User user
+    ) {
+        chatService.markConversationAsRead(id, user);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{id}/messages")
+    @Operation(summary = "Send a message to a conversation", description = "Send a message within an existing conversation. Works for both customers and center staff.")
+    public ResponseEntity<MessageResponse> sendMessageToConversation(
+            @PathVariable Long id,
+            @RequestBody @Valid ConversationMessageRequest request,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(chatService.sendMessageToConversation(id, request.getContent(), user));
+    }
+
     @PostMapping("/messages")
     @Operation(summary = "Send a message to a center")
     public ResponseEntity<MessageResponse> sendMessage(

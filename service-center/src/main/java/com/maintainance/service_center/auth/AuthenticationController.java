@@ -38,6 +38,15 @@ public class AuthenticationController {
         service.activateAccount(token);
     }
 
+    @PostMapping("/resend-otp")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ResponseEntity<?> resendOtp(
+            @RequestBody @Valid ForgotPasswordRequest request
+    ) throws MessagingException {
+        service.resendOtp(request.getEmail());
+        return ResponseEntity.accepted().build();
+    }
+
     @PostMapping("/forgot-password")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public ResponseEntity<?> forgotPassword(

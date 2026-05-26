@@ -8,7 +8,9 @@ import com.maintainance.service_center.service.CenterService;
 import com.maintainance.service_center.service.CenterServiceRepository;
 import com.maintainance.service_center.staff.CenterMembership;
 import com.maintainance.service_center.staff.CenterMembershipRepository;
+import com.maintainance.service_center.staff.CenterPermission;
 import com.maintainance.service_center.staff.CenterRole;
+import com.maintainance.service_center.staff.CenterSecurityService;
 import com.maintainance.service_center.staff.MembershipStatus;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.EntityNotFoundException;
@@ -38,6 +40,8 @@ public class BookingService {
     private final CenterServiceRepository centerServiceRepository;
     private final CenterMembershipRepository membershipRepository;
     private final BookingClaimAuditRepository claimAuditRepository;
+    private final CenterSecurityService centerSecurity;
+    private final BookingStatusHistoryRepository statusHistoryRepository;
 
     private static final Set<BookingStatus> CLAIMABLE_STATUSES = Set.of(
             BookingStatus.CONFIRMED, BookingStatus.RESCHEDULED);
@@ -194,14 +198,16 @@ public class BookingService {
     @Transactional
     public BookingResponse confirm(Long id, User caller) {
         Booking booking = getBooking(id);
-        checkCenterAccess(booking, caller);
+        CenterMembership membership = checkCenterAccess(booking, caller);
 
         if (booking.getBookingStatus() != BookingStatus.PENDING) {
             throw new IllegalArgumentException("Can only confirm pending bookings");
         }
 
+        BookingStatus oldStatus = booking.getBookingStatus();
         booking.setBookingStatus(BookingStatus.CONFIRMED);
         bookingRepository.save(booking);
+        recordStatusChange(booking, oldStatus, BookingStatus.CONFIRMED, caller, membership.getRole(), null);
         log.info("Confirmed booking id={}", id);
         return toResponse(booking);
     }
@@ -209,14 +215,16 @@ public class BookingService {
     @Transactional
     public BookingResponse startService(Long id, User caller) {
         Booking booking = getBooking(id);
-        checkCenterAccess(booking, caller);
+        CenterMembership membership = checkCenterAccess(booking, caller);
 
         if (booking.getBookingStatus() != BookingStatus.CONFIRMED) {
             throw new IllegalArgumentException("Can only start confirmed bookings");
         }
 
+        BookingStatus oldStatus = booking.getBookingStatus();
         booking.setBookingStatus(BookingStatus.IN_PROGRESS);
         bookingRepository.save(booking);
+        recordStatusChange(booking, oldStatus, BookingStatus.IN_PROGRESS, caller, membership.getRole(), null);
         log.info("Started service for booking id={}", id);
         return toResponse(booking);
     }
@@ -224,7 +232,7 @@ public class BookingService {
     @Transactional
     public BookingResponse complete(Long id, BookingCompletionRequest request, User caller) {
         Booking booking = getBooking(id);
-        checkCenterAccess(booking, caller);
+        CenterMembership membership = checkCenterAccess(booking, caller);
 
         if (booking.getBookingStatus() != BookingStatus.IN_PROGRESS) {
             throw new IllegalArgumentException("Can only complete in-progress bookings");
@@ -234,6 +242,7 @@ public class BookingService {
                 ? request.getPaymentStatus()
                 : PaymentStatus.PAID;
 
+        BookingStatus oldStatus = booking.getBookingStatus();
         booking.setBookingStatus(BookingStatus.COMPLETED);
         booking.setCompletedAt(LocalDateTime.now());
         booking.setCompletionNotes(request.getCompletionNotes());
@@ -246,6 +255,8 @@ public class BookingService {
         }
 
         bookingRepository.save(booking);
+        recordStatusChange(booking, oldStatus, BookingStatus.COMPLETED, caller, membership.getRole(),
+                request.getCompletionNotes());
         log.info("Completed booking id={}", id);
         return toResponse(booking);
     }
@@ -255,18 +266,31 @@ public class BookingService {
         Booking booking = getBooking(id);
         checkOwnershipOrAccess(booking, caller);
 
-        if (booking.getBookingStatus() == BookingStatus.COMPLETED || 
+        if (booking.getBookingStatus() == BookingStatus.COMPLETED ||
             booking.getBookingStatus() == BookingStatus.CANCELLED) {
             throw new IllegalArgumentException("Cannot cancel completed or cancelled booking");
         }
 
+        boolean isCustomer = caller.getId().equals(booking.getCustomer().getId());
+        BookingStatus oldStatus = booking.getBookingStatus();
         booking.setBookingStatus(BookingStatus.CANCELLED);
         booking.setCancelledAt(LocalDateTime.now());
         booking.setCancelledReason(request.getReason());
-        booking.setCancelledBy(caller.getId().equals(booking.getCustomer().getId()) ? 
-                CancelledBy.CUSTOMER : CancelledBy.CENTER);
+        booking.setCancelledBy(isCustomer ? CancelledBy.CUSTOMER : CancelledBy.CENTER);
 
         bookingRepository.save(booking);
+
+        // Record audit — resolve role for center staff; customers get null role
+        CenterRole actingRole = null;
+        if (!isCustomer) {
+            actingRole = centerSecurity.resolveMembership(booking.getCenter().getId(), caller)
+                    .map(m -> m.getRole())
+                    .orElse(null);
+        }
+        if (actingRole != null) {
+            recordStatusChange(booking, oldStatus, BookingStatus.CANCELLED, caller, actingRole,
+                    request.getReason());
+        }
         log.info("Cancelled booking id={} by {}", id, booking.getCancelledBy());
         return toResponse(booking);
     }
@@ -332,8 +356,21 @@ public class BookingService {
         }
     }
 
-    private void checkCenterAccess(Booking booking, User caller) {
-        centerResolver.assertAccess(booking.getCenter().getId(), caller);
+    private CenterMembership checkCenterAccess(Booking booking, User caller) {
+        return centerSecurity.requirePermission(
+                booking.getCenter().getId(), caller, CenterPermission.MANAGE_BOOKINGS);
+    }
+
+    private void recordStatusChange(Booking booking, BookingStatus oldStatus, BookingStatus newStatus,
+                                     User actingUser, CenterRole actingRole, String notes) {
+        statusHistoryRepository.save(BookingStatusHistory.builder()
+                .booking(booking)
+                .actingUser(actingUser)
+                .actingRole(actingRole)
+                .oldStatus(oldStatus)
+                .newStatus(newStatus)
+                .notes(notes)
+                .build());
     }
 
     private String generateBookingNumber() {
@@ -423,7 +460,7 @@ public class BookingService {
     public BookingQueueResponse getQueue(User caller, Pageable pageable) {
         CenterMembership membership = resolveActiveMembership(caller);
 
-        if (membership.getRole() != CenterRole.TECHNICIAN) {
+        if (!membership.getRole().hasPermission(CenterPermission.CLAIM_BOOKING)) {
             throw new AccessDeniedException("CLAIM_BOOKING permission required");
         }
 
@@ -460,7 +497,7 @@ public class BookingService {
     public BookingResponse claim(Long bookingId, User caller) {
         CenterMembership membership = resolveActiveMembership(caller);
 
-        if (membership.getRole() != CenterRole.TECHNICIAN) {
+        if (!membership.getRole().hasPermission(CenterPermission.CLAIM_BOOKING)) {
             throw new AccessDeniedException("CLAIM_BOOKING permission required");
         }
 
@@ -500,6 +537,58 @@ public class BookingService {
                 .build());
 
         return toResponse(locked);
+    }
+
+    @Transactional
+    public BookingResponse assign(Long bookingId, Long membershipId, User caller) {
+        Booking booking = getBooking(bookingId);
+
+        // Caller must have ASSIGN_TECHNICIAN_MANUAL permission at this center
+        centerSecurity.requirePermission(
+                booking.getCenter().getId(), caller, CenterPermission.ASSIGN_TECHNICIAN_MANUAL);
+
+        if (membershipId == null) {
+            // Unassign
+            booking.setAssignedMembership(null);
+            bookingRepository.save(booking);
+            log.info("Unassigned booking id={}", bookingId);
+            return toResponse(booking);
+        }
+
+        CenterMembership targetMembership = membershipRepository.findById(membershipId)
+                .orElseThrow(() -> new EntityNotFoundException("Membership not found"));
+
+        // Must be at the same center
+        if (!targetMembership.getCenter().getId().equals(booking.getCenter().getId())) {
+            throw new IllegalArgumentException("This technician does not belong to this branch");
+        }
+
+        // Must be active
+        if (targetMembership.getStatus() != MembershipStatus.ACTIVE) {
+            throw new IllegalArgumentException("Target staff member is not active");
+        }
+
+        // Must be a technician
+        if (targetMembership.getRole() != CenterRole.TECHNICIAN) {
+            throw new IllegalArgumentException("Only technicians can be assigned to bookings");
+        }
+
+        booking.setAssignedMembership(targetMembership);
+        bookingRepository.save(booking);
+        log.info("Assigned booking id={} to membership id={}", bookingId, membershipId);
+        return toResponse(booking);
+    }
+
+    public Page<BookingResponse> findAssignedBookings(User caller, BookingStatus status, Pageable pageable) {
+        CenterMembership membership = resolveActiveMembership(caller);
+        Page<Booking> page;
+        if (status != null) {
+            page = bookingRepository.findByAssignedMembershipIdAndBookingStatus(
+                    membership.getId(), status, pageable);
+        } else {
+            page = bookingRepository.findByAssignedMembershipId(membership.getId(), pageable);
+        }
+        return page.map(this::toResponse);
     }
 
     private CenterMembership resolveActiveMembership(User caller) {

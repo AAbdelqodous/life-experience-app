@@ -59,6 +59,14 @@ public class MaintenanceCenterController {
         return ResponseEntity.ok(service.uploadImage(file, caller));
     }
 
+    @DeleteMapping("/my/images/{imageUrl}")
+    public ResponseEntity<MaintenanceCenterResponse> deleteCenterImage(
+            @PathVariable String imageUrl,
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.deleteImage(java.net.URLDecoder.decode(imageUrl, java.nio.charset.StandardCharsets.UTF_8), caller));
+    }
+
     @PostMapping(value = "/my/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<MaintenanceCenterResponse> uploadCenterLogo(
             @RequestParam("file") MultipartFile file,

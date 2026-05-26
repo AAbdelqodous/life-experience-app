@@ -36,9 +36,13 @@ public class StaffService {
     private final RoleRepository roleRepository;
     private final EmailService emailService;
     private final TokenRepository tokenRepository;
+    private final CenterSecurityService centerSecurity;
 
     @Value("${application.frontend-url}")
     private String frontendUrl;
+
+    @Value("${app.staff.max-members-per-center:50}")
+    private int maxMembersPerCenter;
 
     public Page<CenterMembershipResponse> getStaff(Long centerId, MembershipStatus status, Pageable pageable, User caller) {
         MaintenanceCenter center = getActiveCenter(centerId);
@@ -57,7 +61,15 @@ public class StaffService {
     @Transactional
     public Long inviteStaff(InviteStaffRequest request, User caller) {
         MaintenanceCenter center = getCallerCenter(caller);
-        checkCanInviteStaff(center, caller);
+        checkCanInviteStaff(center, caller, request.getTargetRole());
+
+        // Enforce max staff cap (NFR-007)
+        long activeOrInvitedCount = membershipRepository.countByCenterIdAndStatusIn(
+                center.getId(), List.of(MembershipStatus.ACTIVE, MembershipStatus.INVITED));
+        if (activeOrInvitedCount >= maxMembersPerCenter) {
+            throw new IllegalArgumentException(
+                    "Center has reached the maximum number of staff members (" + maxMembersPerCenter + ")");
+        }
 
         // Check if there's already a pending invitation for this email.
         // Expire any stale ones first so a re-invite is allowed after the window passes.
@@ -373,38 +385,79 @@ public class StaffService {
     }
 
     public MaintenanceCenter getCallerCenter(User caller) {
-        return centerRepository.findFirstByOwnerId(caller.getId())
-                .orElseThrow(() -> new EntityNotFoundException("No center found for this owner"));
+        // Try owner path first
+        var owned = centerRepository.findFirstByOwnerId(caller.getId());
+        if (owned.isPresent()) {
+            return owned.get();
+        }
+
+        // Fall back to active membership (Branch Manager, etc.)
+        return membershipRepository.findByUserIdAndStatus(caller.getId(), MembershipStatus.ACTIVE)
+                .stream()
+                .findFirst()
+                .map(CenterMembership::getCenter)
+                .orElseThrow(() -> new EntityNotFoundException("No center found for this user"));
     }
 
-    private void checkMembershipPermission(MaintenanceCenter center, User caller) {
-        if (!center.getOwner().getId().equals(caller.getId())) {
+    /**
+     * Check that the caller has at least staff-viewing permission at this center.
+     * Owners and Branch Managers can view the staff list.
+     */
+    private CenterMembership checkMembershipPermission(MaintenanceCenter center, User caller) {
+        // OWNER always has MANAGE_ALL_STAFF; BRANCH_MANAGER has MANAGE_NON_MANAGER_STAFF
+        // Either permission is sufficient to VIEW the staff list
+        CenterMembership membership = centerSecurity.resolveMembership(center.getId(), caller)
+                .orElseThrow(() -> new AccessDeniedException("You do not have access to this center"));
+        if (!membership.getRole().hasPermission(CenterPermission.MANAGE_ALL_STAFF)
+                && !membership.getRole().hasPermission(CenterPermission.MANAGE_NON_MANAGER_STAFF)) {
             throw new AccessDeniedException("You do not have permission to manage this center's staff");
         }
+        return membership;
     }
 
-    private void checkCanInviteStaff(MaintenanceCenter center, User caller) {
-        checkMembershipPermission(center, caller);
+    /**
+     * Check that the caller can invite staff. OWNER can invite anyone.
+     * BRANCH_MANAGER can only invite TECHNICIAN and RECEPTIONIST.
+     */
+    private CenterMembership checkCanInviteStaff(MaintenanceCenter center, User caller, CenterRole targetRole) {
+        CenterMembership callerMembership = checkMembershipPermission(center, caller);
+
+        if (callerMembership.getRole() == CenterRole.OWNER) {
+            return callerMembership;
+        }
+
+        // Branch Manager can only invite Technicians and Receptionists (not BMs, Accountants, or Owners)
+        if (callerMembership.getRole() == CenterRole.BRANCH_MANAGER) {
+            if (targetRole != CenterRole.TECHNICIAN && targetRole != CenterRole.RECEPTIONIST) {
+                throw new AccessDeniedException(
+                        "Branch Managers can only invite Technicians and Receptionists");
+            }
+            return callerMembership;
+        }
+
+        throw new AccessDeniedException("You do not have permission to invite staff");
     }
 
     private boolean canManageMember(CenterMembership membership, User caller) {
-        // Owner can manage everyone
-        if (membership.getCenter().getOwner().getId().equals(caller.getId())) {
-            return true;
-        }
-
-        // Check if caller is a branch manager
-        CenterMembership callerMembership = membershipRepository
-                .findByCenterIdAndUserId(membership.getCenter().getId(), caller.getId())
-                .orElse(null);
-
-        if (callerMembership == null || callerMembership.getRole() != CenterRole.BRANCH_MANAGER) {
+        CenterMembership callerMembership = centerSecurity.resolveMembership(
+                membership.getCenter().getId(), caller).orElse(null);
+        if (callerMembership == null) {
             return false;
         }
 
-        // Branch manager can only manage non-manager staff
-        return membership.getRole() != CenterRole.OWNER && 
-               membership.getRole() != CenterRole.BRANCH_MANAGER;
+        // OWNER (MANAGE_ALL_STAFF) can manage everyone except themselves
+        if (callerMembership.getRole().hasPermission(CenterPermission.MANAGE_ALL_STAFF)) {
+            return true;
+        }
+
+        // BRANCH_MANAGER (MANAGE_NON_MANAGER_STAFF) can manage Technicians and Receptionists only.
+        // Accountants are excluded per spec 011 amendment D — they have revenue access.
+        if (callerMembership.getRole().hasPermission(CenterPermission.MANAGE_NON_MANAGER_STAFF)) {
+            return membership.getRole() == CenterRole.TECHNICIAN
+                    || membership.getRole() == CenterRole.RECEPTIONIST;
+        }
+
+        return false;
     }
 
     private CenterMembershipResponse toMembershipResponse(CenterMembership membership) {

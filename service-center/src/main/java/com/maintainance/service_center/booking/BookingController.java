@@ -45,6 +45,16 @@ public class BookingController {
         return ResponseEntity.ok(service.findByCustomer(caller, pageable));
     }
 
+    @GetMapping("/assigned")
+    @Operation(summary = "Get assigned bookings", description = "Returns bookings assigned to the calling staff member. Requires an active membership.")
+    public ResponseEntity<Page<BookingResponse>> getAssignedBookings(
+            @AuthenticationPrincipal User caller,
+            @RequestParam(required = false) BookingStatus status,
+            @PageableDefault(size = 20, sort = "createdAt") Pageable pageable
+    ) {
+        return ResponseEntity.ok(service.findAssignedBookings(caller, status, pageable));
+    }
+
     @GetMapping("/center/stats")
     public ResponseEntity<BookingStatsResponse> getCenterStats(
             @AuthenticationPrincipal User caller
@@ -131,6 +141,16 @@ public class BookingController {
             @AuthenticationPrincipal User caller
     ) {
         return ResponseEntity.ok(service.cancel(id, request, caller));
+    }
+
+    @PutMapping("/{id}/assign")
+    @Operation(summary = "Assign booking to technician", description = "Manually assign (or unassign) a booking to a technician. Requires ASSIGN_TECHNICIAN_MANUAL permission.")
+    public ResponseEntity<BookingResponse> assignBooking(
+            @PathVariable Long id,
+            @RequestBody BookingAssignRequest request,
+            @AuthenticationPrincipal User caller
+    ) {
+        return ResponseEntity.ok(service.assign(id, request.getMembershipId(), caller));
     }
 
     @GetMapping("/queue")

@@ -75,4 +75,36 @@ public class AnalyticsController {
 
         return ResponseEntity.ok(analyticsService.getPeakHours(user, startDate, endDate));
     }
+
+    @GetMapping("/center/dashboard-snapshot")
+    public ResponseEntity<DashboardSnapshotResponse> getDashboardSnapshot(
+            @AuthenticationPrincipal User user) {
+        log.info("Getting dashboard snapshot for user {}", user.getId());
+        return ResponseEntity.ok(analyticsService.getDashboardSnapshot(user));
+    }
+
+    @GetMapping("/center/staff-performance")
+    public ResponseEntity<StaffPerformanceBoardResponse> getStaffPerformanceBoard(
+            @AuthenticationPrincipal User user) {
+        log.info("Getting staff performance board for user {}", user.getId());
+        return ResponseEntity.ok(analyticsService.getStaffPerformanceBoard(user));
+    }
+
+    @GetMapping("/center/staff/{membershipId}/history")
+    public ResponseEntity<StaffHistoryResponse> getStaffHistory(
+            @AuthenticationPrincipal User user,
+            @PathVariable Long membershipId,
+            @RequestParam(defaultValue = "6") int months) {
+        log.info("Getting staff history for membership {} by user {}", membershipId, user.getId());
+        return ResponseEntity.ok(analyticsService.getStaffHistory(user, membershipId, months));
+    }
+
+    @GetMapping("/center/trends")
+    public ResponseEntity<TrendsResponse> getTrends(
+            @AuthenticationPrincipal User user,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        log.info("Getting trends for user {} from {} to {}", user.getId(), startDate, endDate);
+        return ResponseEntity.ok(analyticsService.getTrends(user, startDate, endDate));
+    }
 }

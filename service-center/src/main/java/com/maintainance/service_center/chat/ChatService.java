@@ -1,8 +1,11 @@
 package com.maintainance.service_center.chat;
 
+import com.maintainance.service_center.center.CenterResolverService;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
 import com.maintainance.service_center.common.PageResponse;
+import com.maintainance.service_center.staff.CenterPermission;
+import com.maintainance.service_center.staff.CenterSecurityService;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +27,8 @@ public class ChatService {
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final MaintenanceCenterRepository centerRepository;
+    private final CenterSecurityService centerSecurity;
+    private final CenterResolverService centerResolver;
 
     public Conversation getOrCreateConversation(Long centerId, User user) {
         log.info("Getting or creating conversation for user {} and center {}", user.getId(), centerId);
@@ -64,11 +69,11 @@ public class ChatService {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
 
-        // Verify the conversation belongs to the user (as customer) or to their center (as owner)
+        // Verify the conversation belongs to the user (as customer) or to their center (as staff with MANAGE_CHAT)
         boolean isCustomer = conversation.getCustomer().getId().equals(user.getId());
-        boolean isCenterOwner = conversation.getCenter().getOwner() != null &&
-                conversation.getCenter().getOwner().getId().equals(user.getId());
-        if (!isCustomer && !isCenterOwner) {
+        boolean hasChatAccess = centerSecurity.hasPermission(
+                conversation.getCenter().getId(), user, CenterPermission.MANAGE_CHAT);
+        if (!isCustomer && !hasChatAccess) {
             throw new IllegalArgumentException("Access denied to this conversation");
         }
 
@@ -112,15 +117,11 @@ public class ChatService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<ConversationResponse> getCenterConversations(User owner, int page, int size) {
-        log.info("Fetching center conversations for owner {}, page {}, size {}", owner.getId(), page, size);
+    public PageResponse<ConversationResponse> getCenterConversations(User caller, int page, int size) {
+        log.info("Fetching center conversations for user {}, page {}, size {}", caller.getId(), page, size);
 
-        MaintenanceCenter center = centerRepository.findByOwnerIdAndIsActiveTrue(
-                        owner.getId(), PageRequest.of(0, 1))
-                .getContent()
-                .stream()
-                .findFirst()
-                .orElseThrow(() -> new EntityNotFoundException("No active center found for this owner"));
+        MaintenanceCenter center = centerResolver.resolveCenter(caller);
+        centerSecurity.requirePermission(center.getId(), caller, CenterPermission.MANAGE_CHAT);
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "lastMessageAt"));
         Page<Conversation> conversations = conversationRepository.findActiveConversationsByCenter(center.getId(), pageable);
@@ -129,15 +130,15 @@ public class ChatService {
     }
 
     @Transactional
-    public PageResponse<MessageResponse> getCenterConversationMessages(Long conversationId, User owner, int page, int size) {
-        log.info("Fetching messages for conversation {} by center owner {}", conversationId, owner.getId());
+    public PageResponse<MessageResponse> getCenterConversationMessages(Long conversationId, User caller, int page, int size) {
+        log.info("Fetching messages for conversation {} by user {}", conversationId, caller.getId());
 
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
 
-        if (!conversation.getCenter().getOwner().getId().equals(owner.getId())) {
-            throw new IllegalArgumentException("You do not have permission to access this conversation");
-        }
+        // Permission check: MANAGE_CHAT required (Owner, Branch Manager, Receptionist)
+        centerSecurity.requirePermission(
+                conversation.getCenter().getId(), caller, CenterPermission.MANAGE_CHAT);
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "createdAt"));
         Page<Message> messages = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId, pageable);
@@ -236,11 +237,73 @@ public class ChatService {
                 .build();
     }
 
+    @Transactional
+    public void markConversationAsRead(Long conversationId, User caller) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
+
+        boolean isCustomer = caller.getId().equals(conversation.getCustomer().getId());
+
+        if (isCustomer) {
+            // Customer marks center messages as read
+            messageRepository.markAllAsReadInConversation(conversationId, SenderType.STAFF);
+            conversation.setUnreadCenterMessages(0);
+        } else {
+            // Center staff marks customer messages as read
+            centerSecurity.requirePermission(
+                    conversation.getCenter().getId(), caller, CenterPermission.MANAGE_CHAT);
+            messageRepository.markAllAsReadInConversation(conversationId, SenderType.CUSTOMER);
+            conversation.setUnreadCustomerMessages(0);
+        }
+        conversationRepository.save(conversation);
+    }
+
+    @Transactional
+    public MessageResponse sendMessageToConversation(Long conversationId, String content, User caller) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
+
+        boolean isCustomer = caller.getId().equals(conversation.getCustomer().getId());
+        SenderType senderType;
+
+        if (isCustomer) {
+            senderType = SenderType.CUSTOMER;
+        } else {
+            // Verify center staff has MANAGE_CHAT permission
+            centerSecurity.requirePermission(
+                    conversation.getCenter().getId(), caller, CenterPermission.MANAGE_CHAT);
+            senderType = SenderType.STAFF;
+        }
+
+        Message message = Message.builder()
+                .conversation(conversation)
+                .sender(caller)
+                .senderType(senderType)
+                .content(content)
+                .messageType(MessageType.TEXT)
+                .isRead(false)
+                .isDelivered(false)
+                .isSystemMessage(false)
+                .isEdited(false)
+                .isDeleted(false)
+                .build();
+
+        Message saved = messageRepository.save(message);
+
+        conversation.setLastMessageAt(LocalDateTime.now());
+        conversationRepository.save(conversation);
+
+        return mapToMessageResponse(saved);
+    }
+
     private MessageResponse mapToMessageResponse(Message message) {
         return MessageResponse.builder()
                 .id(message.getId())
-                .content(message.getContent())
+                .conversationId(message.getConversation() != null ? message.getConversation().getId() : null)
+                .senderId(message.getSender() != null ? message.getSender().getId() : null)
                 .senderType(message.getSenderType())
+                .senderName(message.getSender() != null ? message.getSender().fullName() : null)
+                .content(message.getContent())
                 .read(message.getIsRead() != null ? message.getIsRead() : false)
                 .createdAt(message.getCreatedAt())
                 .build();

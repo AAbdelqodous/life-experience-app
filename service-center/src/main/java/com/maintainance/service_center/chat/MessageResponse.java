@@ -13,8 +13,11 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class MessageResponse {
     private Long id;
-    private String content;
+    private Long conversationId;
+    private Integer senderId;
     private SenderType senderType;
+    private String senderName;
+    private String content;
     private boolean read;
     private LocalDateTime createdAt;
 }

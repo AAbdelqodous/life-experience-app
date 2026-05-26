@@ -289,7 +289,17 @@ public class AuthenticationService {
         tokenRepository.save(savedToken);
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
+    public void resendOtp(String email) throws MessagingException {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("No account found with this email"));
+        if (user.isEnabled()) {
+            throw new IllegalArgumentException("Account is already activated");
+        }
+        resendValidationToken(user);
+        log.info("OTP resent for email: {}", email);
+    }
+
     public void resendValidationToken(User user) throws MessagingException {
         var newToken = generateAndSaveActivationToken(user);
         log.info("New token generated and committed: {}", newToken);
