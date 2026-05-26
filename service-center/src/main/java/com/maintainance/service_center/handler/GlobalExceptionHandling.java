@@ -1,6 +1,7 @@
 package com.maintainance.service_center.handler;
 
 import com.maintainance.service_center.auth.AccountRejectedException;
+import com.maintainance.service_center.staff.StaffOperationException;
 import jakarta.mail.MessagingException;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.http.HttpStatus;
@@ -125,6 +126,19 @@ public class GlobalExceptionHandling {
                 .status(HttpStatus.FORBIDDEN)
                 .body(
                         ExceptionResponse.builder()
+                                .error(exp.getMessage())
+                                .build()
+                );
+    }
+
+    @ExceptionHandler(StaffOperationException.class)
+    public ResponseEntity<ExceptionResponse> handleException(StaffOperationException exp){
+        return ResponseEntity
+                .status(exp.getErrorCode().getHttpStatus())
+                .body(
+                        ExceptionResponse.builder()
+                                .businessErrorCode(exp.getErrorCode().getCode())
+                                .businessErrorDescription(exp.getErrorCode().getDescription())
                                 .error(exp.getMessage())
                                 .build()
                 );
