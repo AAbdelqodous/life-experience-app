@@ -135,4 +135,16 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate,
             Pageable pageable);
+
+    // Spec 020: count bookings for a department that are NOT in a terminal status.
+    // Used by DepartmentService.deactivate() to enforce FR-D-003.
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.department.id = :departmentId AND b.bookingStatus NOT IN :terminalStatuses")
+    long countNonTerminalByDepartmentId(@Param("departmentId") Long departmentId,
+                                         @Param("terminalStatuses") java.util.Set<BookingStatus> terminalStatuses);
+
+    // Spec 020: backfill helper — non-terminal bookings at a center with no department assigned.
+    @Query("SELECT b FROM Booking b WHERE b.center.id = :centerId AND b.department IS NULL " +
+           "AND b.bookingStatus NOT IN :terminalStatuses")
+    List<Booking> findUnroutedBookingsAtCenter(@Param("centerId") Long centerId,
+                                                @Param("terminalStatuses") java.util.Set<BookingStatus> terminalStatuses);
 }

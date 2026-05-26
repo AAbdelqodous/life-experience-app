@@ -5,6 +5,7 @@ import com.maintainance.service_center.category.ServiceCategory;
 import com.maintainance.service_center.category.ServiceCategoryRepository;
 import com.maintainance.service_center.category.ServiceCategoryResponse;
 import com.maintainance.service_center.config.FileStorageService;
+import com.maintainance.service_center.department.DepartmentService;
 import com.maintainance.service_center.service.CenterService;
 import com.maintainance.service_center.service.CenterServiceRepository;
 import com.maintainance.service_center.service.CenterServiceResponse;
@@ -42,6 +43,7 @@ public class MaintenanceCenterService {
     private final CenterMembershipRepository membershipRepository;
     private final CenterServiceRepository centerServiceRepository;
     private final ServiceManagementService serviceManagementService;
+    private final DepartmentService departmentService;
 
     @Transactional
     public MaintenanceCenterResponse create(MaintenanceCenterRequest request, User owner) {
@@ -88,6 +90,9 @@ public class MaintenanceCenterService {
                 .activatedAt(LocalDateTime.now())
                 .build();
         membershipRepository.save(ownerMembership);
+
+        // Spec 020 FR-D-012: every new center starts with a General department.
+        departmentService.ensureGeneralDepartment(center);
 
         log.info("Created maintenance center id={} by owner id={} with owner membership id={}",
                 center.getId(), owner.getId(), ownerMembership.getId());

@@ -4,6 +4,8 @@ import com.maintainance.service_center.category.ServiceCategory;
 import com.maintainance.service_center.center.CenterResolverService;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
+import com.maintainance.service_center.department.Department;
+import com.maintainance.service_center.department.DepartmentService;
 import com.maintainance.service_center.service.CenterService;
 import com.maintainance.service_center.service.CenterServiceRepository;
 import com.maintainance.service_center.staff.CenterMembership;
@@ -42,6 +44,7 @@ public class BookingService {
     private final BookingClaimAuditRepository claimAuditRepository;
     private final CenterSecurityService centerSecurity;
     private final BookingStatusHistoryRepository statusHistoryRepository;
+    private final DepartmentService departmentService;
 
     private static final Set<BookingStatus> CLAIMABLE_STATUSES = Set.of(
             BookingStatus.CONFIRMED, BookingStatus.RESCHEDULED);
@@ -113,6 +116,10 @@ public class BookingService {
 
         String bookingNumber = generateBookingNumber();
 
+        // Spec 020 — route booking to a department based on its category.
+        // Falls back to the center's General department when no active dept covers the category.
+        Department department = departmentService.resolveForCategory(center, category);
+
         Booking booking = Booking.builder()
                 .bookingNumber(bookingNumber)
                 .customer(customer)
@@ -124,6 +131,7 @@ public class BookingService {
                 .serviceType(serviceType)
                 .service(service)
                 .category(category)
+                .department(department)
                 .serviceDescription(request.getServiceDescription())
                 .problemDescription(request.getProblemDescription())
                 .requestedServices(request.getRequestedServices() != null ? request.getRequestedServices() : List.of())

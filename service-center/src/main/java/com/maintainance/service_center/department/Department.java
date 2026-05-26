@@ -18,13 +18,7 @@ import java.util.List;
 @AllArgsConstructor
 @NoArgsConstructor
 @Entity
-@Table(
-    name = "department",
-    uniqueConstraints = {
-        @UniqueConstraint(name = "uq_dept_name_ar_center", columnNames = {"center_id", "name_ar"}),
-        @UniqueConstraint(name = "uq_dept_name_en_center", columnNames = {"center_id", "name_en"})
-    }
-)
+@Table(name = "department")
 @EntityListeners(AuditingEntityListener.class)
 public class Department {
 

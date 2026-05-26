@@ -21,7 +21,18 @@ public enum BusinessErrorCodes {
     INVITATION_NOT_PENDING(3004, HttpStatus.BAD_REQUEST, "Invitation is not in pending status"),
     INVITATION_EMAIL_MISMATCH(3005, HttpStatus.FORBIDDEN, "This invitation was sent to a different email address"),
     CANNOT_REMOVE_OWNER(3006, HttpStatus.BAD_REQUEST, "Cannot remove the center owner"),
-    INSUFFICIENT_ROLE_SCOPE(3007, HttpStatus.FORBIDDEN, "Insufficient role scope to perform this action");
+    INSUFFICIENT_ROLE_SCOPE(3007, HttpStatus.FORBIDDEN, "Insufficient role scope to perform this action"),
+
+    // Department errors (3100–3199) — spec 020
+    DEPT_DUPLICATE_NAME_AR(3100, HttpStatus.BAD_REQUEST, "A department with this Arabic name already exists at this center"),
+    DEPT_DUPLICATE_NAME_EN(3101, HttpStatus.BAD_REQUEST, "A department with this English name already exists at this center"),
+    DEPT_INVALID_CATEGORY(3102, HttpStatus.BAD_REQUEST, "One or more selected categories do not exist"),
+    DEPT_HAS_OPEN_BOOKINGS(3103, HttpStatus.CONFLICT, "Department has open bookings; reassign or complete them before deactivating"),
+    DEPT_HAS_ACTIVE_MEMBERS(3104, HttpStatus.CONFLICT, "Department has active technician members; remove them before deactivating"),
+    DEPT_LAST_ACTIVE(3105, HttpStatus.CONFLICT, "Cannot deactivate the last active department; every center must have at least one"),
+    DEPT_MEMBER_NOT_TECHNICIAN(3106, HttpStatus.BAD_REQUEST, "Only technicians can be assigned to a department"),
+    DEPT_MEMBER_ALREADY_ASSIGNED(3107, HttpStatus.BAD_REQUEST, "Membership already assigned to this department"),
+    DEPT_MEMBER_WRONG_CENTER(3108, HttpStatus.BAD_REQUEST, "Membership does not belong to the caller's center");
 
     @Getter
     private final int code;
