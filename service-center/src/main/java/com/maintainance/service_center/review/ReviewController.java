@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,6 +31,7 @@ public class ReviewController {
     }
 
     @GetMapping("/center")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     @Operation(summary = "Get reviews for the authenticated center owner's center")
     public ResponseEntity<PageResponse<ReviewResponse>> getMyCenterReviews(
             @AuthenticationPrincipal User user,
@@ -40,6 +42,7 @@ public class ReviewController {
     }
 
     @PostMapping("/{id}/reply")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     @Operation(summary = "Reply to a review as the center owner")
     public ResponseEntity<ReviewResponse> replyToReview(
             @PathVariable Long id,
@@ -50,7 +53,8 @@ public class ReviewController {
     }
 
     @GetMapping("/center/stats")
-    @Operation(summary = "Get review stats for the authenticated center owner")
+    @PreAuthorize("hasAnyRole('OWNER', 'STAFF')")
+    @Operation(summary = "Get review stats for the authenticated center owner or staff")
     public ResponseEntity<ReviewStatsResponse> getReviewStats(
             @AuthenticationPrincipal User user
     ) {
@@ -65,6 +69,17 @@ public class ReviewController {
             @RequestParam(defaultValue = "10") int size
     ) {
         return ResponseEntity.ok(reviewService.getCenterReviews(id, page, size));
+    }
+
+    @GetMapping("/my-assigned")
+    @PreAuthorize("hasRole('STAFF')")
+    @Operation(summary = "Get reviews on bookings assigned to the current staff member")
+    public ResponseEntity<PageResponse<ReviewResponse>> getMyAssignedReviews(
+            @AuthenticationPrincipal User user,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        return ResponseEntity.ok(reviewService.getMyAssignedReviews(user, page, size));
     }
 
     @GetMapping("/my")

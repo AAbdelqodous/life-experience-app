@@ -1,5 +1,6 @@
 package com.maintainance.service_center.staff;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -8,6 +9,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,7 +18,9 @@ import java.util.Map;
 @RestController
 @RequestMapping("centers/my/staff")
 @RequiredArgsConstructor
+@PreAuthorize("hasRole('OWNER')")
 @Tag(name = "Center Staff Management")
+@SecurityRequirement(name = "bearerAuth")
 public class StaffController {
 
     private final StaffService staffService;
@@ -81,6 +85,7 @@ public class StaffController {
 
     @DeleteMapping("/leave")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAnyRole('OWNER', 'STAFF')")
     public ResponseEntity<Void> leaveCenter(
             @AuthenticationPrincipal com.maintainance.service_center.user.User caller
     ) {

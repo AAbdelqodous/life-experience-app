@@ -4,8 +4,11 @@ import com.maintainance.service_center.center.CenterResolverService;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
 import com.maintainance.service_center.common.PageResponse;
+import com.maintainance.service_center.staff.CenterMembership;
+import com.maintainance.service_center.staff.CenterMembershipRepository;
 import com.maintainance.service_center.staff.CenterPermission;
 import com.maintainance.service_center.staff.CenterSecurityService;
+import com.maintainance.service_center.staff.MembershipStatus;
 import com.maintainance.service_center.user.User;
 import com.maintainance.service_center.user.UserType;
 import jakarta.persistence.EntityNotFoundException;
@@ -28,6 +31,7 @@ public class ReviewService {
     private final MaintenanceCenterRepository centerRepository;
     private final CenterResolverService centerResolver;
     private final CenterSecurityService centerSecurity;
+    private final CenterMembershipRepository centerMembershipRepository;
 
     @Transactional
     public ReviewResponse createReview(ReviewRequest request, User user) {
@@ -153,6 +157,25 @@ public class ReviewService {
         reviewRepository.save(review);
 
         return mapToResponse(review);
+    }
+
+    public PageResponse<ReviewResponse> getMyAssignedReviews(User caller, int page, int size) {
+        log.info("Fetching reviews for staff user {}'s assigned bookings", caller.getId());
+
+        if (caller.getUserType() != UserType.STAFF) {
+            throw new AccessDeniedException("Only staff members can access assigned reviews");
+        }
+
+        CenterMembership membership = centerMembershipRepository
+                .findByUserIdAndStatus(caller.getId(), MembershipStatus.ACTIVE)
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new AccessDeniedException("No active center membership found"));
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<Review> reviews = reviewRepository.findByAssignedMembershipId(membership.getId(), pageable);
+
+        return PageResponse.of(reviews.map(this::mapToResponse));
     }
 
     private ReviewResponse mapToResponse(Review review) {

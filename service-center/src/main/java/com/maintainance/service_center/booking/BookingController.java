@@ -14,6 +14,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -46,6 +47,7 @@ public class BookingController {
     }
 
     @GetMapping("/assigned")
+    @PreAuthorize("hasAnyRole('OWNER', 'STAFF')")
     @Operation(summary = "Get assigned bookings", description = "Returns bookings assigned to the calling staff member. Requires an active membership.")
     public ResponseEntity<Page<BookingResponse>> getAssignedBookings(
             @AuthenticationPrincipal User caller,
@@ -56,6 +58,7 @@ public class BookingController {
     }
 
     @GetMapping("/center/stats")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<BookingStatsResponse> getCenterStats(
             @AuthenticationPrincipal User caller
     ) {
@@ -63,6 +66,7 @@ public class BookingController {
     }
 
     @GetMapping("/center/{centerId}")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<Page<BookingResponse>> findByCenter(
             @PathVariable Long centerId,
             @AuthenticationPrincipal User caller,
@@ -73,6 +77,7 @@ public class BookingController {
     }
 
     @GetMapping("/stats")
+    @PreAuthorize("hasAnyRole('OWNER', 'STAFF')")
     public ResponseEntity<BookingStatsResponse> getMyStats(
             @AuthenticationPrincipal User caller
     ) {
@@ -144,6 +149,7 @@ public class BookingController {
     }
 
     @PutMapping("/{id}/assign")
+    @PreAuthorize("hasRole('OWNER')")
     @Operation(summary = "Assign booking to technician", description = "Manually assign (or unassign) a booking to a technician. Requires ASSIGN_TECHNICIAN_MANUAL permission.")
     public ResponseEntity<BookingResponse> assignBooking(
             @PathVariable Long id,
@@ -154,6 +160,7 @@ public class BookingController {
     }
 
     @GetMapping("/queue")
+    @PreAuthorize("hasAnyRole('OWNER', 'STAFF')")
     @Operation(summary = "Get department booking queue", description = "Returns unassigned claimable bookings for the caller's department(s). Requires TECHNICIAN role.")
     public ResponseEntity<BookingQueueResponse> getQueue(
             @AuthenticationPrincipal User caller,
@@ -164,6 +171,7 @@ public class BookingController {
     }
 
     @PostMapping("/{id}/claim")
+    @PreAuthorize("hasRole('STAFF')")
     @Operation(summary = "Claim a booking", description = "Assigns an unassigned booking to the calling technician atomically.")
     public ResponseEntity<BookingResponse> claimBooking(
             @PathVariable Long id,

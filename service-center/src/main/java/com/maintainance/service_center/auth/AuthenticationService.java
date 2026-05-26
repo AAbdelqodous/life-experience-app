@@ -4,6 +4,9 @@ import com.maintainance.service_center.email.EmailService;
 import com.maintainance.service_center.email.EmailTemplateName;
 import com.maintainance.service_center.role.RoleRepository;
 import com.maintainance.service_center.security.JwtService;
+import com.maintainance.service_center.staff.CenterMembership;
+import com.maintainance.service_center.staff.CenterMembershipRepository;
+import com.maintainance.service_center.staff.MembershipStatus;
 import com.maintainance.service_center.user.ApprovalStatus;
 import com.maintainance.service_center.user.Token;
 import com.maintainance.service_center.user.TokenRepository;
@@ -40,6 +43,7 @@ public class AuthenticationService {
     private final EmailService emailService;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final CenterMembershipRepository centerMembershipRepository;
     @Value("${application.mail.frontend.activation-url}")
     private String activationUrl;
 
@@ -141,12 +145,28 @@ public class AuthenticationService {
         String jwtToken = jwtService.generateToken(claims, user);
         log.info("User authenticated successfully: {}", user.getEmail());
 
+        Integer affiliatedCenterId = resolveAffiliatedCenterId(user);
+
         return AuthenticationResponse.builder()
                 .token(jwtToken)
                 .approvalStatus(user.getApprovalStatus())
+                .userType(user.getUserType())
+                .affiliatedCenterId(affiliatedCenterId)
                 .build();
     }
     
+    private Integer resolveAffiliatedCenterId(User user) {
+        if (user.getUserType() != UserType.STAFF) {
+            return null;
+        }
+        return centerMembershipRepository
+                .findByUserIdAndStatus(user.getId(), MembershipStatus.ACTIVE)
+                .stream()
+                .findFirst()
+                .map(m -> m.getCenter().getId().intValue())
+                .orElse(null);
+    }
+
     private void sendValidationEmail(User user) throws MessagingException {
         var newToken = generateAndSaveActivationToken(user);
         log.info("Sending validation email to: {} with token: {}", user.getEmail(), newToken);

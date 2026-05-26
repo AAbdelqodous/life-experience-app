@@ -632,6 +632,65 @@ public class AnalyticsService {
         return (hour - 12) + " PM";
     }
 
+    @Transactional(readOnly = true)
+    public StaffDashboardResponse getStaffDashboard(User user) {
+        CenterMembership membership = membershipRepository
+                .findByUserIdAndStatus(user.getId(), MembershipStatus.ACTIVE)
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("No active center membership found"));
+
+        List<Booking> allAssigned = bookingRepository
+                .findByAssignedMembershipId(membership.getId(), PageRequest.of(0, 1000))
+                .getContent();
+
+        long assignedTotal = allAssigned.size();
+        long assignedActive = allAssigned.stream()
+                .filter(b -> b.getBookingStatus() != BookingStatus.COMPLETED
+                          && b.getBookingStatus() != BookingStatus.CANCELLED)
+                .count();
+        long assignedCompleted = allAssigned.stream()
+                .filter(b -> b.getBookingStatus() == BookingStatus.COMPLETED)
+                .count();
+
+        LocalDate weekStart = LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
+        long assignedThisWeek = allAssigned.stream()
+                .filter(b -> b.getBookingDate() != null && !b.getBookingDate().isBefore(weekStart))
+                .count();
+
+        Double avgRating = allAssigned.stream()
+                .filter(b -> b.getBookingStatus() == BookingStatus.COMPLETED && b.getReview() != null)
+                .mapToInt(b -> b.getReview().getRating())
+                .average().stream().findFirst().orElse(Double.NaN);
+        if (avgRating.isNaN()) avgRating = null;
+        else avgRating = Math.round(avgRating * 10.0) / 10.0;
+
+        List<StaffPerformanceBoardResponse.ActiveBookingSummary> recentBookings = allAssigned.stream()
+                .filter(b -> b.getBookingStatus() != BookingStatus.COMPLETED
+                          && b.getBookingStatus() != BookingStatus.CANCELLED)
+                .sorted(Comparator.comparing(Booking::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(5)
+                .map(b -> StaffPerformanceBoardResponse.ActiveBookingSummary.builder()
+                        .bookingId(b.getId())
+                        .customerName(b.getCustomer().fullName())
+                        .serviceType(b.getServiceType() != null ? b.getServiceType().name() :
+                                (b.getService() != null ? b.getService().getNameEn() : null))
+                        .bookingDate(b.getBookingDate() != null ? b.getBookingDate().toString() : null)
+                        .bookingTime(b.getBookingTime() != null ? b.getBookingTime().toString() : null)
+                        .bookingStatus(b.getBookingStatus())
+                        .build())
+                .toList();
+
+        return StaffDashboardResponse.builder()
+                .assignedTotal(assignedTotal)
+                .assignedActive(assignedActive)
+                .assignedCompleted(assignedCompleted)
+                .assignedThisWeek(assignedThisWeek)
+                .averageRatingOnMyBookings(avgRating)
+                .recentAssignedBookings(recentBookings)
+                .build();
+    }
+
     private MaintenanceCenter getCenterForOwner(User user) {
         return centerResolver.resolveCenter(user);
     }

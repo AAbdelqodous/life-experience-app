@@ -1,6 +1,8 @@
 package com.maintainance.service_center.user;
 
 import com.maintainance.service_center.config.FileStorageService;
+import com.maintainance.service_center.staff.CenterMembershipRepository;
+import com.maintainance.service_center.staff.MembershipStatus;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +18,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
     private final PasswordEncoder passwordEncoder;
+    private final CenterMembershipRepository centerMembershipRepository;
 
     /**
      * Get current user's profile
@@ -251,6 +254,16 @@ public class UserService {
      * Map User entity to UserResponse DTO
      */
     public UserResponse toResponse(User user) {
+        Integer affiliatedCenterId = null;
+        if (user.getUserType() == UserType.STAFF) {
+            affiliatedCenterId = centerMembershipRepository
+                    .findByUserIdAndStatus(user.getId(), MembershipStatus.ACTIVE)
+                    .stream()
+                    .findFirst()
+                    .map(m -> m.getCenter().getId().intValue())
+                    .orElse(null);
+        }
+
         return UserResponse.builder()
                 .id(user.getId())
                 .firstname(user.getFirstname())
@@ -270,6 +283,7 @@ public class UserService {
                 .emailNotificationsEnabled(user.getEmailNotificationsEnabled())
                 .smsNotificationsEnabled(user.getSmsNotificationsEnabled())
                 .userType(user.getUserType())
+                .affiliatedCenterId(affiliatedCenterId)
                 .approvalStatus(user.getApprovalStatus())
                 .rejectionReason(user.getRejectionReason())
                 .accountLocked(user.isAccountLocked())

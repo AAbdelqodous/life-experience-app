@@ -63,6 +63,11 @@ public class SecurityConfig {
                                 .requestMatchers(HttpMethod.GET, "/lookups/**").permitAll()
                                 // Admin panel
                                 .requestMatchers("/admin/**").hasRole("ADMIN")
+                                // Staff management — owner only
+                                .requestMatchers("/centers/my/staff/**").hasAnyRole("OWNER", "STAFF")
+                                // Analytics — owner or staff (method-level @PreAuthorize narrows further)
+                                .requestMatchers("/analytics/center/**").hasAnyRole("OWNER", "ADMIN")
+                                .requestMatchers("/analytics/staff/**").hasRole("STAFF")
                                         .anyRequest()
                                         .authenticated()
                         )
