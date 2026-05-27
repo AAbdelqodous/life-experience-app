@@ -2,15 +2,17 @@ package com.maintainance.service_center.progress;
 
 import com.maintainance.service_center.booking.Booking;
 import com.maintainance.service_center.booking.BookingRepository;
-import com.maintainance.service_center.center.MaintenanceCenter;
-import com.maintainance.service_center.center.MaintenanceCenterRepository;
+import com.maintainance.service_center.staff.CenterMembership;
+import com.maintainance.service_center.staff.CenterPermission;
+import com.maintainance.service_center.staff.CenterRole;
+import com.maintainance.service_center.staff.CenterSecurityService;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.EntityNotFoundException;
-import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -20,64 +22,41 @@ import java.util.List;
 @Slf4j
 public class BookingMediaService {
 
+    /** Spec 009 edge case: photo > 10 MB rejected. Kept as bytes for clarity. */
+    private static final long MAX_FILE_SIZE_BYTES = 10L * 1024 * 1024;
+
     private final BookingMediaRepository bookingMediaRepository;
     private final BookingRepository bookingRepository;
-    private final MaintenanceCenterRepository centerRepository;
+    private final CenterSecurityService centerSecurity;
     private final com.maintainance.service_center.config.FileStorageService fileStorageService;
 
     public List<BookingMediaResponse> getCustomerVisibleMedia(Long bookingId, User customer) {
-        // Fetch booking
         Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> {
-                    log.warn("Booking not found for ID: {}", bookingId);
-                    return new EntityNotFoundException("Booking not found with ID: " + bookingId);
-                });
+                .orElseThrow(() -> new EntityNotFoundException("Booking not found with ID: " + bookingId));
 
-        // Verify booking belongs to the authenticated customer
         if (!booking.getCustomer().getId().equals(customer.getId())) {
-            log.warn("Access denied: User {} attempted to access booking {} belonging to user {}", 
-                    customer.getId(), bookingId, booking.getCustomer().getId());
             throw new AccessDeniedException("You do not have permission to access this booking");
         }
 
-        // Fetch customer-visible media
-        List<BookingMedia> mediaList = bookingMediaRepository.findByBookingIdAndIsVisibleToCustomerTrue(bookingId);
-
-        log.info("Retrieved {} customer-visible media items for booking {} by user {}", 
-                mediaList.size(), bookingId, customer.getId());
-
-        // Convert to response DTOs
-        return mediaList.stream()
+        return bookingMediaRepository.findByBookingIdAndIsVisibleToCustomerTrue(bookingId).stream()
                 .map(this::toResponse)
                 .toList();
     }
 
-    public List<BookingMediaResponse> getAllMediaForOwner(Long bookingId, User owner) {
-        // Verify booking belongs to the authenticated center owner
-        Booking booking = getBookingForOwner(bookingId, owner);
-
-        // Fetch all media
-        List<BookingMedia> mediaList = bookingMediaRepository.findByBookingIdOrderByCreatedAtDesc(bookingId);
-
-        log.info("Retrieved {} media items for booking {} by owner {}", 
-                mediaList.size(), bookingId, owner.getId());
-
-        // Convert to response DTOs
-        return mediaList.stream()
+    public List<BookingMediaResponse> getAllMediaForOwner(Long bookingId, User caller) {
+        Booking booking = getBookingForCenterMember(bookingId, caller);
+        return bookingMediaRepository.findByBookingIdOrderByCreatedAtDesc(booking.getId()).stream()
                 .map(this::toResponse)
                 .toList();
     }
 
     @Transactional
-    public BookingMediaResponse createMedia(Long bookingId, User owner, MultipartFile file,
+    public BookingMediaResponse createMedia(Long bookingId, User caller, MultipartFile file,
             MediaCategory category, String caption, String captionAr, Boolean isVisibleToCustomer) {
-        // Verify booking belongs to the authenticated center owner
-        Booking booking = getBookingForOwner(bookingId, owner);
+        validateFile(file);
+        Booking booking = getBookingForWriter(bookingId, caller, CenterPermission.UPLOAD_PROGRESS_MEDIA);
 
-        // Store the file using FileStorageService
         String fileUrl = fileStorageService.storeFile(file);
-
-        // Determine media type based on content type
         MediaType mediaType = determineMediaType(file.getContentType());
 
         BookingMedia media = BookingMedia.builder()
@@ -88,19 +67,18 @@ public class BookingMediaService {
                 .caption(caption)
                 .captionAr(captionAr)
                 .isVisibleToCustomer(isVisibleToCustomer != null ? isVisibleToCustomer : true)
-                .uploadedBy(owner)
+                .uploadedBy(caller)
                 .build();
 
         BookingMedia saved = bookingMediaRepository.save(media);
-
-        log.info("Created media for booking {} by owner {}", bookingId, owner.getId());
-
+        log.info("Created media id={} for booking {} by user {}", saved.getId(), bookingId, caller.getId());
         return toResponse(saved);
     }
 
     @Transactional
     public BookingMediaResponse createCustomerMedia(Long bookingId, User customer, MultipartFile file,
             String caption, String captionAr) {
+        validateFile(file);
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new EntityNotFoundException("Booking not found with id: " + bookingId));
 
@@ -126,17 +104,41 @@ public class BookingMediaService {
         return toResponse(saved);
     }
 
-    private Booking getBookingForOwner(Long bookingId, User owner) {
+    private void validateFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("File is required");
+        }
+        if (file.getSize() > MAX_FILE_SIZE_BYTES) {
+            throw new IllegalArgumentException(
+                    "Photo is too large. Maximum size is 10 MB per photo.");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null
+                || !(contentType.startsWith("image/") || contentType.startsWith("video/"))) {
+            throw new IllegalArgumentException(
+                    "Unsupported media type: " + contentType);
+        }
+    }
+
+    private Booking getBookingForCenterMember(Long bookingId, User caller) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new EntityNotFoundException("Booking not found with id: " + bookingId));
+        centerSecurity.requireActiveMembership(booking.getCenter().getId(), caller);
+        return booking;
+    }
 
-        MaintenanceCenter center = centerRepository.findFirstByOwnerId(owner.getId())
-                .orElseThrow(() -> new EntityNotFoundException("Maintenance center not found for owner"));
-
-        if (!booking.getCenter().getId().equals(center.getId())) {
-            throw new AccessDeniedException("You do not have access to this booking");
+    private Booking getBookingForWriter(Long bookingId, User caller, CenterPermission permission) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new EntityNotFoundException("Booking not found with id: " + bookingId));
+        CenterMembership membership = centerSecurity.requirePermission(
+                booking.getCenter().getId(), caller, permission);
+        if (membership.getRole() == CenterRole.TECHNICIAN) {
+            CenterMembership assigned = booking.getAssignedMembership();
+            if (assigned == null || !assigned.getId().equals(membership.getId())) {
+                throw new AccessDeniedException(
+                        "Technicians may only upload media for bookings assigned to them");
+            }
         }
-
         return booking;
     }
 
