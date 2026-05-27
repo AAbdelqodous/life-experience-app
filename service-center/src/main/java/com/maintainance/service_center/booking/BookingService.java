@@ -466,7 +466,11 @@ public class BookingService {
     }
 
     public BookingQueueResponse getQueue(User caller, Pageable pageable) {
-        CenterMembership membership = resolveActiveMembership(caller);
+        // Precondition 1 surface for the queue (spec 021): an inactive caller cannot see the queue.
+        CenterMembership membership = membershipRepository
+                .findByUserIdAndStatus(caller.getId(), MembershipStatus.ACTIVE)
+                .stream().findFirst()
+                .orElseThrow(() -> new ClaimException(ClaimErrorCode.STAFF_INACTIVE));
 
         if (!membership.getRole().hasPermission(CenterPermission.CLAIM_BOOKING)) {
             throw new AccessDeniedException("CLAIM_BOOKING permission required");
@@ -503,37 +507,40 @@ public class BookingService {
 
     @Transactional
     public BookingResponse claim(Long bookingId, User caller) {
-        CenterMembership membership = resolveActiveMembership(caller);
+        // Precondition 1 — caller must have an ACTIVE membership somewhere (spec 021 §7).
+        // Resolved inline so we throw the spec-mandated wire code rather than a generic 500.
+        CenterMembership membership = membershipRepository
+                .findByUserIdAndStatus(caller.getId(), MembershipStatus.ACTIVE)
+                .stream().findFirst()
+                .orElseThrow(() -> new ClaimException(ClaimErrorCode.STAFF_INACTIVE));
 
         if (!membership.getRole().hasPermission(CenterPermission.CLAIM_BOOKING)) {
             throw new AccessDeniedException("CLAIM_BOOKING permission required");
         }
 
-        // Precondition 1 — membership must be active
-        if (membership.getStatus() != MembershipStatus.ACTIVE) {
-            throw new IllegalStateException("STAFF_INACTIVE");
-        }
-
-        // Preconditions 2+3 — outside lock (optimistic check)
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new IllegalStateException("BOOKING_NOT_CLAIMABLE"));
-        if (!CLAIMABLE_STATUSES.contains(booking.getBookingStatus())) {
-            throw new IllegalStateException("BOOKING_NOT_CLAIMABLE");
-        }
-
-        // Acquire pessimistic write lock for concurrent-safe checks
+        // Preconditions 2-5 — all evaluated against the locked row.
+        // Doing the booking fetch ONLY via the lock query means Hibernate's first-level
+        // persistence-context cache cannot hand us a stale Booking instance from an
+        // earlier `findById` in this transaction. SELECT ... FOR UPDATE blocks until any
+        // concurrent claim commits, then returns the up-to-date row; that is what makes
+        // precondition 4 (already-claimed) actually race-safe (FR-SC-009).
         Booking locked = bookingRepository.findWithLockById(bookingId)
-                .orElseThrow(() -> new IllegalStateException("BOOKING_NOT_CLAIMABLE"));
+                .orElseThrow(() -> new ClaimException(ClaimErrorCode.BOOKING_NOT_CLAIMABLE));
 
-        // Precondition 4 — already claimed (under lock)
-        if (locked.getAssignedMembership() != null) {
-            throw new IllegalStateException("BOOKING_ALREADY_CLAIMED");
+        // Precondition 3 — booking is in a claimable status
+        if (!CLAIMABLE_STATUSES.contains(locked.getBookingStatus())) {
+            throw new ClaimException(ClaimErrorCode.BOOKING_NOT_CLAIMABLE);
         }
 
-        // Precondition 5 — department match (under lock)
+        // Precondition 4 — booking is still unassigned
+        if (locked.getAssignedMembership() != null) {
+            throw new ClaimException(ClaimErrorCode.BOOKING_ALREADY_CLAIMED);
+        }
+
+        // Precondition 5 — booking's department is in the caller's department list
         if (locked.getDepartment() == null
                 || !membership.getDepartmentIds().contains(locked.getDepartment().getId())) {
-            throw new IllegalStateException("WRONG_DEPARTMENT");
+            throw new ClaimException(ClaimErrorCode.WRONG_DEPARTMENT);
         }
 
         locked.setAssignedMembership(membership);

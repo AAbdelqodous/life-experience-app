@@ -32,7 +32,13 @@ public enum BusinessErrorCodes {
     DEPT_LAST_ACTIVE(3105, HttpStatus.CONFLICT, "Cannot deactivate the last active department; every center must have at least one"),
     DEPT_MEMBER_NOT_TECHNICIAN(3106, HttpStatus.BAD_REQUEST, "Only technicians can be assigned to a department"),
     DEPT_MEMBER_ALREADY_ASSIGNED(3107, HttpStatus.BAD_REQUEST, "Membership already assigned to this department"),
-    DEPT_MEMBER_WRONG_CENTER(3108, HttpStatus.BAD_REQUEST, "Membership does not belong to the caller's center");
+    DEPT_MEMBER_WRONG_CENTER(3108, HttpStatus.BAD_REQUEST, "Membership does not belong to the caller's center"),
+
+    // Self-claim errors (3200–3299) — spec 021. Wire codes (string names below) MUST match the spec §7 contract.
+    SC_STAFF_INACTIVE(3200, HttpStatus.CONFLICT, "Your membership is no longer active at this center"),
+    SC_BOOKING_NOT_CLAIMABLE(3201, HttpStatus.CONFLICT, "This booking is no longer available for claim"),
+    SC_BOOKING_ALREADY_CLAIMED(3202, HttpStatus.CONFLICT, "This booking was just claimed by another technician"),
+    SC_WRONG_DEPARTMENT(3203, HttpStatus.CONFLICT, "This booking is in a different department");
 
     @Getter
     private final int code;

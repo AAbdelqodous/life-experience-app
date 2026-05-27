@@ -1,6 +1,7 @@
 package com.maintainance.service_center.handler;
 
 import com.maintainance.service_center.auth.AccountRejectedException;
+import com.maintainance.service_center.booking.ClaimException;
 import com.maintainance.service_center.department.DepartmentOperationException;
 import com.maintainance.service_center.staff.StaffOperationException;
 import jakarta.mail.MessagingException;
@@ -154,6 +155,22 @@ public class GlobalExceptionHandling {
                                 .businessErrorCode(exp.getErrorCode().getCode())
                                 .businessErrorDescription(exp.getErrorCode().getDescription())
                                 .error(exp.getMessage())
+                                .build()
+                );
+    }
+
+    // Spec 021 — self-claim. The frontend reads err.data.error for the wire code,
+    // so set `error` to the ClaimErrorCode enum name (e.g. "BOOKING_ALREADY_CLAIMED").
+    @ExceptionHandler(ClaimException.class)
+    public ResponseEntity<ExceptionResponse> handleException(ClaimException exp){
+        var be = exp.getCode().getBusinessErrorCode();
+        return ResponseEntity
+                .status(be.getHttpStatus())
+                .body(
+                        ExceptionResponse.builder()
+                                .businessErrorCode(be.getCode())
+                                .businessErrorDescription(be.getDescription())
+                                .error(exp.getCode().name())
                                 .build()
                 );
     }
