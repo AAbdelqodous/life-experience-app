@@ -33,5 +33,10 @@ public enum CenterPermission {
     VIEW_CALENDAR,
 
     // Staff-specific
-    VIEW_ASSIGNED_BOOKINGS
+    VIEW_ASSIGNED_BOOKINGS,
+
+    // Re-route (spec 022). Names are part of the frontend wire contract
+    // (types/staff.ts). No endpoints in this session consume them yet.
+    REROUTE_BOOKING_ANY,
+    REROUTE_BOOKING_ASSIGNED
 }
