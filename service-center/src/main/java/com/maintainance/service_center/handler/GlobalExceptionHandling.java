@@ -3,6 +3,7 @@ package com.maintainance.service_center.handler;
 import com.maintainance.service_center.auth.AccountRejectedException;
 import com.maintainance.service_center.booking.ClaimException;
 import com.maintainance.service_center.department.DepartmentOperationException;
+import com.maintainance.service_center.reroute.RerouteException;
 import com.maintainance.service_center.staff.StaffOperationException;
 import jakarta.mail.MessagingException;
 import jakarta.persistence.EntityNotFoundException;
@@ -155,6 +156,22 @@ public class GlobalExceptionHandling {
                                 .businessErrorCode(exp.getErrorCode().getCode())
                                 .businessErrorDescription(exp.getErrorCode().getDescription())
                                 .error(exp.getMessage())
+                                .build()
+                );
+    }
+
+    // Spec 022 — re-route. Frontend reads err.data.error for the wire code name
+    // (e.g. "CANNOT_REROUTE_INTO_DIAGNOSTIC").
+    @ExceptionHandler(RerouteException.class)
+    public ResponseEntity<ExceptionResponse> handleException(RerouteException exp){
+        var code = exp.getErrorCode();
+        return ResponseEntity
+                .status(code.getHttpStatus())
+                .body(
+                        ExceptionResponse.builder()
+                                .businessErrorCode(code.getCode())
+                                .businessErrorDescription(code.getDescription())
+                                .error(code.name())
                                 .build()
                 );
     }

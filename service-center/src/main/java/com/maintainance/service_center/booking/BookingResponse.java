@@ -64,6 +64,9 @@ public class BookingResponse {
     private Long departmentId;
     private String departmentNameAr;
     private String departmentNameEn;
+    // Spec 022 — diagnostic intake fields. False/null on pre-022 bookings.
+    private Boolean passedThroughDiagnostic;
+    private BigDecimal diagnosticFeeRateAtClaim;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

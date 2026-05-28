@@ -58,6 +58,20 @@ public class BookingQuoteService {
             throw new IllegalArgumentException("Discount cannot exceed the subtotal");
         }
 
+        // Spec 022 FR-DR-010: auto-add a non-removable DIAGNOSTIC_FEE line item when the
+        // booking passed through diagnostic AND a fee snapshot was captured at claim. The
+        // fee folds into the subtotal so the customer-facing total is correct end-to-end
+        // (FR-DR-011). The check is on the snapshot, not the current dept rate, so owner
+        // edits to the fee after claim do not retroactively change owed amount (FR-DR-014).
+        boolean addDiagnosticFee = Boolean.TRUE.equals(booking.getPassedThroughDiagnostic())
+                && booking.getDiagnosticFeeRateAtClaim() != null
+                && booking.getDiagnosticFeeRateAtClaim().signum() > 0;
+        BigDecimal diagnosticFee = addDiagnosticFee
+                ? booking.getDiagnosticFeeRateAtClaim() : BigDecimal.ZERO;
+        if (addDiagnosticFee) {
+            subtotal = subtotal.add(diagnosticFee);
+        }
+
         BigDecimal tax = BigDecimal.ZERO; // Kuwait has no VAT today; tax computed server-side per spec.
         BigDecimal totalAmount = subtotal.subtract(discount).add(tax);
 
@@ -76,13 +90,27 @@ public class BookingQuoteService {
             }
         }
 
-        List<QuoteLineItem> lineItems = request.getLineItems().stream()
-                .map(item -> new QuoteLineItem(
+        // Spec 022: prepend the system-generated DIAGNOSTIC_FEE line item before user lines
+        // so it always renders first. partsCost=0, laborCost=snapshot (data-model.md
+        // §BookingQuote extension — "If only parts/labor exist, populate laborCost = fee").
+        // The kind discriminator + QuoteLineItemResponse.from() make this row immutable
+        // on the wire (editable=false, removable=false, descriptionKey set).
+        java.util.List<QuoteLineItem> lineItems = new java.util.ArrayList<>();
+        if (addDiagnosticFee) {
+            lineItems.add(new QuoteLineItem(
+                    "Diagnostic Fee", // server-side label; frontend resolves descriptionKey instead
+                    "رسوم التشخيص",
+                    BigDecimal.ZERO,
+                    diagnosticFee,
+                    QuoteLineItemKind.DIAGNOSTIC_FEE));
+        }
+        request.getLineItems().forEach(item ->
+                lineItems.add(new QuoteLineItem(
                         item.getDescription(),
                         item.getDescriptionAr(),
                         item.getPartsCost(),
-                        item.getLaborCost()))
-                .toList();
+                        item.getLaborCost(),
+                        null /* user line — null kind = treat as editable/removable */)));
 
         BookingQuote quote = new BookingQuote();
         quote.setBooking(booking);
@@ -133,5 +161,31 @@ public class BookingQuoteService {
         return items.stream()
                 .map(item -> item.getPartsCost().add(item.getLaborCost()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
+     * Spec 022 FR-DR-021: mark any in-force quote (status SENT or APPROVED) for this booking
+     * as REVISED. Used by the re-route flow so the customer is asked to re-approve a fresh
+     * quote built by the technician at the booking's new department.
+     * <p>Returns {@code true} if any quote was flipped (i.e. an active quote existed at
+     * re-route time), {@code false} otherwise. The caller uses this to vary the customer
+     * notification body (FR-DR-029).
+     * <p>Mandatory propagation: this MUST be called from within the re-route transaction.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public boolean markRevisedByBookingId(Long bookingId) {
+        List<BookingQuote> active = quoteRepository.findByBookingIdOrderByVersionDesc(bookingId)
+                .stream()
+                .filter(q -> q.getStatus() == QuoteStatus.SENT
+                        || q.getStatus() == QuoteStatus.APPROVED)
+                .toList();
+        for (BookingQuote q : active) {
+            q.setStatus(QuoteStatus.REVISED);
+            quoteRepository.save(q);
+        }
+        if (!active.isEmpty()) {
+            log.info("Marked {} active quote(s) as REVISED for booking {}", active.size(), bookingId);
+        }
+        return !active.isEmpty();
     }
 }

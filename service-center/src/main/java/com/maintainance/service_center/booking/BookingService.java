@@ -45,6 +45,7 @@ public class BookingService {
     private final CenterSecurityService centerSecurity;
     private final BookingStatusHistoryRepository statusHistoryRepository;
     private final DepartmentService departmentService;
+    private final com.maintainance.service_center.department.DepartmentRepository departmentRepository;
 
     private static final Set<BookingStatus> CLAIMABLE_STATUSES = Set.of(
             BookingStatus.CONFIRMED, BookingStatus.RESCHEDULED);
@@ -87,11 +88,11 @@ public class BookingService {
 
         boolean hasNewFields = request.getCategoryId() != null && request.getServiceId() != null;
         boolean hasLegacyField = request.getServiceType() != null;
-
-        if (!hasNewFields && !hasLegacyField) {
-            throw new IllegalArgumentException(
-                    "Either (categoryId + serviceId) or serviceType is required to create a booking");
-        }
+        // Spec 022 FR-DR-006: the customer may submit a booking with no category and no
+        // service hint at all ("let the center diagnose"). We treat this as the diagnostic
+        // intake path; the booking routes to the center's diagnostic dept if it exists,
+        // else falls back to the default department (FR-DR-007).
+        boolean isDiagnosticIntake = !hasNewFields && !hasLegacyField;
 
         com.maintainance.service_center.service.Service service = null;
         ServiceCategory category = null;
@@ -109,16 +110,30 @@ public class BookingService {
                 log.info("Booking created with both new (categoryId/serviceId) and legacy (serviceType) fields; " +
                          "new fields take precedence for center id={}", center.getId());
             }
-        } else {
+        } else if (hasLegacyField) {
             log.warn("Booking created via deprecated serviceType field for center id={}; " +
                      "please migrate clients to use categoryId + serviceId", center.getId());
+        } else {
+            log.info("Diagnostic intake — booking created with no category for center id={}", center.getId());
         }
 
         String bookingNumber = generateBookingNumber();
 
-        // Spec 020 — route booking to a department based on its category.
-        // Falls back to the center's General department when no active dept covers the category.
-        Department department = departmentService.resolveForCategory(center, category);
+        // Spec 022 FR-DR-007: a null-category booking prefers the diagnostic dept. If the
+        // center has no diagnostic dept configured, fall through to the spec 020 default
+        // routing (General). passedThroughDiagnostic is set only when the resolved dept
+        // is diagnostic, preserving FR-DR-008 across all subsequent reroutes.
+        Department department = null;
+        boolean passedThroughDiagnostic = false;
+        if (isDiagnosticIntake) {
+            department = departmentRepository.findDiagnosticByCenterId(center.getId()).orElse(null);
+            if (department != null) {
+                passedThroughDiagnostic = true;
+            }
+        }
+        if (department == null) {
+            department = departmentService.resolveForCategory(center, category);
+        }
 
         Booking booking = Booking.builder()
                 .bookingNumber(bookingNumber)
@@ -132,6 +147,7 @@ public class BookingService {
                 .service(service)
                 .category(category)
                 .department(department)
+                .passedThroughDiagnostic(passedThroughDiagnostic)
                 .serviceDescription(request.getServiceDescription())
                 .problemDescription(request.getProblemDescription())
                 .requestedServices(request.getRequestedServices() != null ? request.getRequestedServices() : List.of())
@@ -389,7 +405,7 @@ public class BookingService {
         return number;
     }
 
-    private BookingResponse toResponse(Booking booking) {
+    public BookingResponse toResponse(Booking booking) {
         return BookingResponse.builder()
                 .id(booking.getId())
                 .bookingNumber(booking.getBookingNumber())
@@ -460,6 +476,8 @@ public class BookingService {
                         ? booking.getDepartment().getNameAr() : null)
                 .departmentNameEn(booking.getDepartment() != null
                         ? booking.getDepartment().getNameEn() : null)
+                .passedThroughDiagnostic(booking.getPassedThroughDiagnostic())
+                .diagnosticFeeRateAtClaim(booking.getDiagnosticFeeRateAtClaim())
                 .createdAt(booking.getCreatedAt())
                 .updatedAt(booking.getUpdatedAt())
                 .build();
@@ -541,6 +559,16 @@ public class BookingService {
         if (locked.getDepartment() == null
                 || !membership.getDepartmentIds().contains(locked.getDepartment().getId())) {
             throw new ClaimException(ClaimErrorCode.WRONG_DEPARTMENT);
+        }
+
+        // Spec 022 FR-DR-014: capture the diagnostic fee rate at the moment a diagnostic
+        // technician claims the booking. The IS NULL guard ensures the snapshot is taken
+        // at most once per booking — re-route + re-claim in a non-diagnostic dept does
+        // not overwrite the original rate. Re-routing INTO diagnostic is forbidden
+        // (FR-DR-017), so the captured rate is always the first-diagnostic rate.
+        if (Boolean.TRUE.equals(locked.getDepartment().getIsDiagnostic())
+                && locked.getDiagnosticFeeRateAtClaim() == null) {
+            locked.setDiagnosticFeeRateAtClaim(locked.getDepartment().getDiagnosticFeeAmount());
         }
 
         locked.setAssignedMembership(membership);

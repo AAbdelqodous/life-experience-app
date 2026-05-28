@@ -41,15 +41,10 @@ public class BookingQuoteResponse {
         response.setVersion(entity.getVersion());
         
         if (entity.getLineItems() != null) {
+            // Spec 022: each line carries a kind discriminator + editable/removable flags
+            // derived from it. DIAGNOSTIC_FEE lines surface a descriptionKey i18n key.
             response.setLineItems(entity.getLineItems().stream()
-                    .map(item -> {
-                        QuoteLineItemResponse itemResponse = new QuoteLineItemResponse();
-                        itemResponse.setDescription(item.getDescription());
-                        itemResponse.setDescriptionAr(item.getDescriptionAr());
-                        itemResponse.setPartsCost(item.getPartsCost());
-                        itemResponse.setLaborCost(item.getLaborCost());
-                        return itemResponse;
-                    })
+                    .map(QuoteLineItemResponse::from)
                     .collect(Collectors.toList()));
         }
         

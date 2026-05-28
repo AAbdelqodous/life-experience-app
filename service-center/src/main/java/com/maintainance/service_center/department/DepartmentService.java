@@ -66,6 +66,11 @@ public class DepartmentService {
                 ? request.getDisplayOrder()
                 : nextDisplayOrder(center.getId());
 
+        boolean isDiagnostic = Boolean.TRUE.equals(request.getIsDiagnostic());
+        // Spec 022 invariants enforced before save.
+        validateDiagnosticInvariants(center.getId(), null, isDiagnostic,
+                request.getDiagnosticFeeAmount());
+
         Department department = Department.builder()
                 .center(center)
                 .nameAr(request.getNameAr())
@@ -73,10 +78,13 @@ public class DepartmentService {
                 .displayOrder(displayOrder)
                 .isActive(true)
                 .categories(new ArrayList<>(categories))
+                .isDiagnostic(isDiagnostic)
+                .diagnosticFeeAmount(isDiagnostic ? request.getDiagnosticFeeAmount() : null)
                 .build();
 
         department = departmentRepository.save(department);
-        log.info("Created department id={} for center id={}", department.getId(), center.getId());
+        log.info("Created department id={} for center id={} isDiagnostic={}",
+                department.getId(), center.getId(), isDiagnostic);
         return toResponse(department);
     }
 
@@ -101,9 +109,56 @@ public class DepartmentService {
             department.setCategories(new ArrayList<>(resolveCategories(request.getCategoryIds())));
         }
 
+        // Spec 022 — partial update for diagnostic fields. Both fields optional;
+        // either one being non-null triggers the invariant check.
+        boolean touchingDiagnostic = request.getIsDiagnostic() != null
+                || request.getDiagnosticFeeAmount() != null;
+        if (touchingDiagnostic) {
+            boolean targetIsDiagnostic = request.getIsDiagnostic() != null
+                    ? request.getIsDiagnostic()
+                    : Boolean.TRUE.equals(department.getIsDiagnostic());
+            java.math.BigDecimal targetFee = request.getDiagnosticFeeAmount() != null
+                    ? request.getDiagnosticFeeAmount()
+                    : department.getDiagnosticFeeAmount();
+
+            // Block toggling the flag if non-terminal bookings exist (FR-DR-003).
+            if (request.getIsDiagnostic() != null
+                    && !request.getIsDiagnostic().equals(department.getIsDiagnostic())
+                    && countNonTerminalBookings(departmentId) > 0) {
+                throw new DepartmentOperationException(
+                        BusinessErrorCodes.DIAGNOSTIC_TOGGLE_BLOCKED_BY_OPEN_BOOKINGS);
+            }
+
+            validateDiagnosticInvariants(center.getId(), departmentId, targetIsDiagnostic, targetFee);
+
+            department.setIsDiagnostic(targetIsDiagnostic);
+            // When flag flips off, clear the fee; otherwise persist the (possibly null) request value.
+            department.setDiagnosticFeeAmount(targetIsDiagnostic ? targetFee : null);
+        }
+
         department = departmentRepository.save(department);
         log.info("Updated department id={}", departmentId);
         return toResponse(department);
+    }
+
+    // Spec 022 invariants (FR-DR-001, FR-DR-002):
+    //  - at most one active diagnostic dept per center (FR-DR-001)
+    //  - diagnosticFeeAmount may only be set when isDiagnostic=true (FR-DR-002)
+    // excludeDeptId is the dept being updated (or null on create) so it doesn't count itself.
+    private void validateDiagnosticInvariants(Long centerId, Long excludeDeptId,
+                                              boolean isDiagnostic, java.math.BigDecimal feeAmount) {
+        if (!isDiagnostic && feeAmount != null) {
+            throw new DepartmentOperationException(
+                    BusinessErrorCodes.INVALID_DIAGNOSTIC_FEE_TARGET);
+        }
+        if (isDiagnostic) {
+            departmentRepository.findDiagnosticByCenterId(centerId).ifPresent(existing -> {
+                if (excludeDeptId == null || !existing.getId().equals(excludeDeptId)) {
+                    throw new DepartmentOperationException(
+                            BusinessErrorCodes.DUPLICATE_DIAGNOSTIC_DEPARTMENT);
+                }
+            });
+        }
     }
 
     @Transactional
@@ -307,6 +362,8 @@ public class DepartmentService {
                 .categoryIds(department.getCategoryIds())
                 .memberCount((int) membershipRepository.countByDepartmentIdAndStatus(
                         department.getId(), MembershipStatus.ACTIVE))
+                .isDiagnostic(Boolean.TRUE.equals(department.getIsDiagnostic()))
+                .diagnosticFeeAmount(department.getDiagnosticFeeAmount())
                 .build();
     }
 

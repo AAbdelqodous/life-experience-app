@@ -117,8 +117,38 @@ public class NotificationService {
         
         Notification savedNotification = notificationRepository.save(notification);
         log.info("Notification created for user ID: {}", user.getId());
-        
+
         return mapToResponse(savedNotification);
+    }
+
+    /**
+     * Spec 022 FR-DR-027/028: enqueue a bilingual generic "your booking moved" notification
+     * for the customer. Per FR-DR-028 the message MUST NOT reveal internal dept names.
+     * When {@code hadActiveQuote} is true, FR-DR-029 also asks the customer to review the
+     * upcoming revised quote.
+     * <p>This method is intended to be called AFTER the re-route transaction has committed
+     * (see {@code RerouteService}); the resulting notification row is persisted in its own
+     * transaction so a re-route rollback does not leave behind a phantom notification.
+     */
+    @Transactional
+    public void notifyBookingRerouted(User customer, Long bookingId, boolean hadActiveQuote) {
+        String titleEn = "Booking updated";
+        String titleAr = "تم تحديث الحجز";
+        String bodyEn = "Our team has updated your booking.";
+        String bodyAr = "قام فريقنا بتحديث حجزك.";
+        if (hadActiveQuote) {
+            bodyEn += " A revised quote will be sent to you. Please review it before work continues.";
+            bodyAr += " سيتم إرسال عرض سعر مُحدث. يُرجى مراجعته قبل استكمال العمل.";
+        }
+        NotificationRequest request = NotificationRequest.builder()
+                .titleAr(titleAr).titleEn(titleEn)
+                .bodyAr(bodyAr).bodyEn(bodyEn)
+                .notificationType(NotificationType.BOOKING_REROUTED)
+                .notificationPriority(NotificationPriority.NORMAL)
+                .referenceType("BOOKING")
+                .referenceId(bookingId)
+                .build();
+        createNotification(request, customer);
     }
 
     /**

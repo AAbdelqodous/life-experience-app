@@ -8,6 +8,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -52,6 +53,19 @@ public class Department {
     )
     @Builder.Default
     private List<ServiceCategory> categories = new ArrayList<>();
+
+    // Spec 022: at most one diagnostic department per center, enforced by a partial unique
+    // index created from DepartmentSeeder.
+    // columnDefinition includes the DB-level DEFAULT so Hibernate's ALTER TABLE on an
+    // existing non-empty table can backfill historical rows without violating NOT NULL.
+    @Column(name = "is_diagnostic", nullable = false, columnDefinition = "BOOLEAN NOT NULL DEFAULT FALSE")
+    @Builder.Default
+    private Boolean isDiagnostic = false;
+
+    // Spec 022: KD with 3-decimal precision. Nullable until isDiagnostic=true.
+    // Service layer rejects setting this on a non-diagnostic department.
+    @Column(name = "diagnostic_fee_amount", precision = 11, scale = 3)
+    private BigDecimal diagnosticFeeAmount;
 
     @CreatedDate
     @Column(nullable = false, updatable = false)
