@@ -100,5 +100,10 @@ public class DepartmentSeeder implements ApplicationRunner {
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_dept_name_en_center " +
                 "ON department(center_id, name_en) WHERE is_active = TRUE"
         ).executeUpdate();
+        // Spec 022 FR-DR-001: at most one active diagnostic dept per center.
+        em.createNativeQuery(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_dept_one_diagnostic_per_center " +
+                "ON department(center_id) WHERE is_diagnostic = TRUE AND is_active = TRUE"
+        ).executeUpdate();
     }
 }

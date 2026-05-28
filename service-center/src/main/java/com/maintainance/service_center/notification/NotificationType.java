@@ -7,6 +7,9 @@ public enum NotificationType {
     BOOKING_REMINDER,
     BOOKING_RESCHEDULED,
     BOOKING_COMPLETED,
+    // Spec 022: customer notification when their booking is re-routed to a different
+    // department. Generic phrasing per FR-DR-028 (no internal dept names exposed).
+    BOOKING_REROUTED,
 
     // Service related
     SERVICE_STARTED,

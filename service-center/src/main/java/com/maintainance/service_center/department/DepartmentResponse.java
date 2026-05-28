@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Data
@@ -20,4 +21,7 @@ public class DepartmentResponse {
     private Boolean isActive;
     private List<Long> categoryIds;
     private Integer memberCount;
+    // Spec 022 — null/false on existing departments before this migration.
+    private Boolean isDiagnostic;
+    private BigDecimal diagnosticFeeAmount;
 }

@@ -39,4 +39,10 @@ public interface DepartmentRepository extends JpaRepository<Department, Long> {
     @Query("SELECT d FROM Department d WHERE d.center = :center AND d.isActive = true " +
            "ORDER BY d.displayOrder ASC, d.id ASC")
     List<Department> findActiveByCenter(@Param("center") MaintenanceCenter center);
+
+    // Spec 022 FR-DR-007: the center's active diagnostic department (at most one,
+    // enforced by uq_dept_one_diagnostic_per_center).
+    @Query("SELECT d FROM Department d WHERE d.center.id = :centerId " +
+           "AND d.isDiagnostic = true AND d.isActive = true")
+    Optional<Department> findDiagnosticByCenterId(@Param("centerId") Long centerId);
 }

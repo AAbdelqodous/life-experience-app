@@ -142,6 +142,21 @@ public class Booking {
     @JoinColumn(name = "assigned_membership_id")
     private CenterMembership assignedMembership;
 
+    // Spec 022: true when the booking was first routed to a diagnostic department.
+    // Preserved across reroutes (re-routing INTO diagnostic is forbidden, FR-DR-017).
+    // DB-level DEFAULT so the ALTER backfills pre-022 bookings (per data-model.md
+    // "no backfill needed: existing bookings are pre-feature").
+    @Column(name = "passed_through_diagnostic", nullable = false,
+            columnDefinition = "BOOLEAN NOT NULL DEFAULT FALSE")
+    @Builder.Default
+    private Boolean passedThroughDiagnostic = false;
+
+    // Spec 022: snapshot of the diagnostic department's fee captured at the moment a
+    // diagnostic technician claims the booking. Locked thereafter — owner edits to the
+    // fee rate do not retroactively change this value (FR-DR-014).
+    @Column(name = "diagnostic_fee_rate_at_claim", precision = 11, scale = 3)
+    private BigDecimal diagnosticFeeRateAtClaim;
+
     @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
