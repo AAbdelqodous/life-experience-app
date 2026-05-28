@@ -9,6 +9,8 @@ import com.maintainance.service_center.staff.CenterMembership;
 import com.maintainance.service_center.staff.CenterMembershipRepository;
 import com.maintainance.service_center.staff.CenterRole;
 import com.maintainance.service_center.staff.MembershipStatus;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -39,9 +41,14 @@ public class DepartmentSeeder implements ApplicationRunner {
     private final CenterMembershipRepository membershipRepository;
     private final BookingRepository bookingRepository;
 
+    @PersistenceContext
+    private EntityManager em;
+
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        ensurePartialUniqueIndexes();
+
         List<MaintenanceCenter> centers = centerRepository.findAll();
         int seeded = 0, members = 0, bookings = 0;
 
@@ -77,5 +84,21 @@ public class DepartmentSeeder implements ApplicationRunner {
             log.info("Department seeding complete: centers={} memberships_routed={} bookings_routed={}",
                     seeded, members, bookings);
         }
+    }
+
+    // Spec 020 data-model.md §Uniqueness Constraints: partial unique indexes on
+    // (center_id, name_*) WHERE is_active = TRUE. Hibernate auto-DDL can't express
+    // partial indexes, so we issue them here, idempotently. The service-layer check
+    // (ensureNameAvailable) gives the user-friendly error; this index is the race
+    // safety net.
+    private void ensurePartialUniqueIndexes() {
+        em.createNativeQuery(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_dept_name_ar_center " +
+                "ON department(center_id, name_ar) WHERE is_active = TRUE"
+        ).executeUpdate();
+        em.createNativeQuery(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_dept_name_en_center " +
+                "ON department(center_id, name_en) WHERE is_active = TRUE"
+        ).executeUpdate();
     }
 }
