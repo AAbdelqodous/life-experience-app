@@ -84,6 +84,9 @@ public class MaintenanceCenterService {
 
         CenterMembership ownerMembership = CenterMembership.builder()
                 .user(owner)
+                .userFirstname(owner.getFirstname())
+                .userLastname(owner.getLastname())
+                .userEmail(owner.getEmail())
                 .center(center)
                 .role(CenterRole.OWNER)
                 .status(MembershipStatus.ACTIVE)

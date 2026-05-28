@@ -359,9 +359,13 @@ public class StaffService {
         userRepository.save(user);
         log.info("Set user {} type to STAFF and assigned ROLE_STAFF on invitation acceptance", user.getId());
 
-        // Create membership
+        // Create membership — cache the user's name + email so historical
+        // attribution (FR-011) survives later deletion of the User row.
         CenterMembership membership = CenterMembership.builder()
                 .user(user)
+                .userFirstname(user.getFirstname())
+                .userLastname(user.getLastname())
+                .userEmail(user.getEmail())
                 .center(invitation.getCenter())
                 .role(invitation.getTargetRole())
                 .status(MembershipStatus.ACTIVE)
@@ -510,12 +514,21 @@ public class StaffService {
     }
 
     private CenterMembershipResponse toMembershipResponse(CenterMembership membership) {
+        // Prefer cached attribution; fall back to the live User FK for rows
+        // written before the cache columns existed.
+        User user = membership.getUser();
+        String firstname = membership.getUserFirstname() != null
+                ? membership.getUserFirstname() : (user != null ? user.getFirstname() : null);
+        String lastname = membership.getUserLastname() != null
+                ? membership.getUserLastname() : (user != null ? user.getLastname() : null);
+        String email = membership.getUserEmail() != null
+                ? membership.getUserEmail() : (user != null ? user.getEmail() : null);
         return CenterMembershipResponse.builder()
                 .id(membership.getId())
-                .userId(membership.getUser().getId())
-                .userFirstname(membership.getUser().getFirstname())
-                .userLastname(membership.getUser().getLastname())
-                .userEmail(membership.getUser().getEmail())
+                .userId(user != null ? user.getId() : null)
+                .userFirstname(firstname)
+                .userLastname(lastname)
+                .userEmail(email)
                 .role(membership.getRole())
                 .roleAr(membership.getRole().getArabic())
                 .roleEn(membership.getRole().getEnglish())
