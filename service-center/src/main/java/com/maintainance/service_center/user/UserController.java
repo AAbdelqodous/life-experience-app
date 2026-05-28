@@ -114,4 +114,16 @@ public class UserController {
         userService.changePassword(request, caller);
         return ResponseEntity.ok().build();
     }
+
+    @PutMapping("/me/password")
+    @Operation(summary = "Change password (PUT)", description = "Change password — alias for POST /me/change-password")
+    public ResponseEntity<Void> changePasswordPut(
+            @RequestBody ChangePasswordRequest request,
+            @AuthenticationPrincipal User caller) {
+        if (request.getConfirmPassword() == null) {
+            request.setConfirmPassword(request.getNewPassword());
+        }
+        userService.changePassword(request, caller);
+        return ResponseEntity.ok().build();
+    }
 }

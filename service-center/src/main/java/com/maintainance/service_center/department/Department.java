@@ -1,5 +1,6 @@
 package com.maintainance.service_center.department;
 
+import com.maintainance.service_center.category.ServiceCategory;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import jakarta.persistence.*;
 import lombok.*;
@@ -8,6 +9,8 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Getter
 @Setter
@@ -15,13 +18,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @NoArgsConstructor
 @Entity
-@Table(
-    name = "department",
-    uniqueConstraints = {
-        @UniqueConstraint(name = "uq_dept_name_ar_center", columnNames = {"center_id", "name_ar"}),
-        @UniqueConstraint(name = "uq_dept_name_en_center", columnNames = {"center_id", "name_en"})
-    }
-)
+@Table(name = "department")
 @EntityListeners(AuditingEntityListener.class)
 public class Department {
 
@@ -47,6 +44,15 @@ public class Department {
     @Builder.Default
     private Boolean isActive = true;
 
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "department_categories",
+        joinColumns = @JoinColumn(name = "department_id"),
+        inverseJoinColumns = @JoinColumn(name = "category_id")
+    )
+    @Builder.Default
+    private List<ServiceCategory> categories = new ArrayList<>();
+
     @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -54,4 +60,8 @@ public class Department {
     @LastModifiedDate
     @Column(insertable = false)
     private LocalDateTime updatedAt;
+
+    public List<Long> getCategoryIds() {
+        return categories.stream().map(ServiceCategory::getId).toList();
+    }
 }

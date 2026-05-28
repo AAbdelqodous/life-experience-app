@@ -1,6 +1,5 @@
 package com.maintainance.service_center.progress;
 
-import com.maintainance.service_center.config.FileStorageService;
 import com.maintainance.service_center.user.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,58 +18,55 @@ public class WorkProgressController {
 
     private final BookingWorkProgressService workProgressService;
     private final BookingMediaService mediaService;
-    private final FileStorageService fileStorageService;
 
     @PutMapping("/work-stage")
     public ResponseEntity<Void> updateWorkStage(
-            @AuthenticationPrincipal User owner,
+            @AuthenticationPrincipal User caller,
             @PathVariable Long bookingId,
             @Valid @RequestBody UpdateWorkStageRequest request) {
-        workProgressService.updateWorkStage(bookingId, owner, request);
+        workProgressService.updateWorkStage(bookingId, caller, request);
         return ResponseEntity.ok().build();
     }
 
-    @PostMapping(value = "/work-progress", consumes = "multipart/form-data")
+    // Spec 009 contract: POST /work-progress is JSON only — photos go via /media.
+    @PostMapping("/work-progress")
     public ResponseEntity<BookingWorkProgressResponse> createWorkProgress(
-            @AuthenticationPrincipal User owner,
+            @AuthenticationPrincipal User caller,
             @PathVariable Long bookingId,
-            @ModelAttribute CreateWorkProgressRequest request,
-            @RequestParam(required = false) MultipartFile file) {
-        String fileUrl = null;
-        if (file != null && !file.isEmpty()) {
-            fileUrl = fileStorageService.storeFile(file);
-        }
+            @Valid @RequestBody CreateWorkProgressRequest request) {
         BookingWorkProgressResponse response = workProgressService.createWorkProgress(
-                bookingId, owner, request, fileUrl);
+                bookingId, caller, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping("/work-progress")
     public ResponseEntity<List<BookingWorkProgressResponse>> getWorkProgress(
-            @AuthenticationPrincipal User owner,
+            @AuthenticationPrincipal User caller,
             @PathVariable Long bookingId) {
-        return ResponseEntity.ok(workProgressService.getProgressForOwner(bookingId, owner));
+        return ResponseEntity.ok(workProgressService.getProgressForOwner(bookingId, caller));
     }
 
     @PostMapping(value = "/media", consumes = "multipart/form-data")
     public ResponseEntity<BookingMediaResponse> createMedia(
-            @AuthenticationPrincipal User owner,
+            @AuthenticationPrincipal User caller,
             @PathVariable Long bookingId,
             @RequestParam("file") MultipartFile file,
-            @RequestParam("category") MediaCategory category,
+            @RequestParam(value = "category", required = false) MediaCategory category,
             @RequestParam(value = "caption", required = false) String caption,
             @RequestParam(value = "captionAr", required = false) String captionAr,
             @RequestParam(value = "isVisibleToCustomer", required = false) Boolean isVisibleToCustomer) {
+        // Spec 009 contract: category defaults to WORK_IN_PROGRESS.
+        MediaCategory resolvedCategory = category != null ? category : MediaCategory.WORK_IN_PROGRESS;
         BookingMediaResponse response = mediaService.createMedia(
-                bookingId, owner, file, category, caption, captionAr, isVisibleToCustomer);
+                bookingId, caller, file, resolvedCategory, caption, captionAr, isVisibleToCustomer);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping("/media")
     public ResponseEntity<List<BookingMediaResponse>> getMedia(
-            @AuthenticationPrincipal User owner,
+            @AuthenticationPrincipal User caller,
             @PathVariable Long bookingId) {
-        return ResponseEntity.ok(mediaService.getAllMediaForOwner(bookingId, owner));
+        return ResponseEntity.ok(mediaService.getAllMediaForOwner(bookingId, caller));
     }
 
     @PostMapping(value = "/customer-media", consumes = "multipart/form-data")

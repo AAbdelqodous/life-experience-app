@@ -30,6 +30,9 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
     Page<Review> findByReviewerId(Integer reviewerId, Pageable pageable);
 
+    @Query("SELECT r FROM Review r WHERE r.booking.assignedMembership.id = :membershipId ORDER BY r.createdAt DESC")
+    Page<Review> findByAssignedMembershipId(@Param("membershipId") Long membershipId, Pageable pageable);
+
     // Analytics methods
     @Query("SELECT AVG(r.rating) FROM Review r WHERE r.center.id = :centerId AND r.createdAt BETWEEN :startDate AND :endDate")
     Double getAverageRatingByCenterAndDateRange(@Param("centerId") Long centerId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);

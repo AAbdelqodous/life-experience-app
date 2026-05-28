@@ -5,6 +5,7 @@ import com.maintainance.service_center.category.ServiceCategory;
 import com.maintainance.service_center.category.ServiceCategoryRepository;
 import com.maintainance.service_center.category.ServiceCategoryResponse;
 import com.maintainance.service_center.config.FileStorageService;
+import com.maintainance.service_center.department.DepartmentService;
 import com.maintainance.service_center.service.CenterService;
 import com.maintainance.service_center.service.CenterServiceRepository;
 import com.maintainance.service_center.service.CenterServiceResponse;
@@ -42,6 +43,7 @@ public class MaintenanceCenterService {
     private final CenterMembershipRepository membershipRepository;
     private final CenterServiceRepository centerServiceRepository;
     private final ServiceManagementService serviceManagementService;
+    private final DepartmentService departmentService;
 
     @Transactional
     public MaintenanceCenterResponse create(MaintenanceCenterRequest request, User owner) {
@@ -82,12 +84,18 @@ public class MaintenanceCenterService {
 
         CenterMembership ownerMembership = CenterMembership.builder()
                 .user(owner)
+                .userFirstname(owner.getFirstname())
+                .userLastname(owner.getLastname())
+                .userEmail(owner.getEmail())
                 .center(center)
                 .role(CenterRole.OWNER)
                 .status(MembershipStatus.ACTIVE)
                 .activatedAt(LocalDateTime.now())
                 .build();
         membershipRepository.save(ownerMembership);
+
+        // Spec 020 FR-D-012: every new center starts with a General department.
+        departmentService.ensureGeneralDepartment(center);
 
         log.info("Created maintenance center id={} by owner id={} with owner membership id={}",
                 center.getId(), owner.getId(), ownerMembership.getId());
@@ -129,6 +137,27 @@ public class MaintenanceCenterService {
         centerRepository.save(center);
 
         log.info("Image uploaded for center id={}", center.getId());
+        return toResponse(center);
+    }
+
+    @Transactional
+    public MaintenanceCenterResponse deleteImage(String imageUrl, User caller) {
+        MaintenanceCenter center = centerRepository.findByOwnerIdAndIsActiveTrue(caller.getId(), PageRequest.of(0, 1))
+                .getContent()
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("No active center found for this owner"));
+
+        if (center.getImageUrls() == null || !center.getImageUrls().remove(imageUrl)) {
+            throw new EntityNotFoundException("Image not found: " + imageUrl);
+        }
+        centerRepository.save(center);
+
+        // Delete the physical file
+        String fileName = imageUrl.substring(imageUrl.lastIndexOf('/') + 1);
+        fileStorageService.deleteFile(fileName);
+
+        log.info("Image deleted for center id={}: {}", center.getId(), imageUrl);
         return toResponse(center);
     }
 

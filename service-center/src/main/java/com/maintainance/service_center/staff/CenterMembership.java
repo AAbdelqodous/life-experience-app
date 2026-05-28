@@ -30,6 +30,17 @@ public class CenterMembership {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    // Cached at invite-accept time so historical attribution (FR-011) survives
+    // the underlying User row being hard-deleted.
+    @Column(name = "user_firstname")
+    private String userFirstname;
+
+    @Column(name = "user_lastname")
+    private String userLastname;
+
+    @Column(name = "user_email")
+    private String userEmail;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "center_id", nullable = false)
     private MaintenanceCenter center;

@@ -36,9 +36,13 @@ public class StaffService {
     private final RoleRepository roleRepository;
     private final EmailService emailService;
     private final TokenRepository tokenRepository;
+    private final CenterSecurityService centerSecurity;
 
     @Value("${application.frontend-url}")
     private String frontendUrl;
+
+    @Value("${app.staff.max-members-per-center:50}")
+    private int maxMembersPerCenter;
 
     public Page<CenterMembershipResponse> getStaff(Long centerId, MembershipStatus status, Pageable pageable, User caller) {
         MaintenanceCenter center = getActiveCenter(centerId);
@@ -57,7 +61,29 @@ public class StaffService {
     @Transactional
     public Long inviteStaff(InviteStaffRequest request, User caller) {
         MaintenanceCenter center = getCallerCenter(caller);
-        checkCanInviteStaff(center, caller);
+
+        // Cannot invite yourself (3002)
+        if (request.getTargetEmail().equalsIgnoreCase(caller.getEmail())) {
+            throw new StaffOperationException(BusinessErrorCodes.CANNOT_INVITE_SELF);
+        }
+
+        // Cannot invite platform admins (3003)
+        userRepository.findByEmail(request.getTargetEmail()).ifPresent(targetUser -> {
+            if (targetUser.getUserType() == com.maintainance.service_center.user.UserType.ADMIN
+                    || targetUser.getUserType() == com.maintainance.service_center.user.UserType.SUPER_ADMIN) {
+                throw new StaffOperationException(BusinessErrorCodes.CANNOT_INVITE_ADMIN);
+            }
+        });
+
+        checkCanInviteStaff(center, caller, request.getTargetRole());
+
+        // Enforce max staff cap (NFR-007) — code 3001
+        long activeOrInvitedCount = membershipRepository.countByCenterIdAndStatusIn(
+                center.getId(), List.of(MembershipStatus.ACTIVE, MembershipStatus.INVITED));
+        if (activeOrInvitedCount >= maxMembersPerCenter) {
+            throw new StaffOperationException(BusinessErrorCodes.STAFF_LIMIT_REACHED,
+                    "Center has reached the maximum number of staff members (" + maxMembersPerCenter + ")");
+        }
 
         // Check if there's already a pending invitation for this email.
         // Expire any stale ones first so a re-invite is allowed after the window passes.
@@ -81,7 +107,7 @@ public class StaffService {
         }
 
         // Check if user is already a member
-        if (membershipRepository.existsByCenterIdAndUserId(center.getId(), 
+        if (membershipRepository.existsByCenterIdAndUserId(center.getId(),
                 userRepository.findByEmail(request.getTargetEmail()).map(User::getId).orElse(null))) {
             throw new IllegalArgumentException("This user is already a member of this center");
         }
@@ -118,16 +144,32 @@ public class StaffService {
                 .orElseThrow(() -> new EntityNotFoundException("Membership not found with id: " + membershipId));
 
         MaintenanceCenter center = membership.getCenter();
-        checkMembershipPermission(center, caller);
+        CenterMembership callerMembership = checkMembershipPermission(center, caller);
 
-        // Check if caller can manage this member
-        if (!canManageMember(membership, caller)) {
-            throw new AccessDeniedException("You do not have permission to manage this member");
+        // Cannot change an OWNER's role
+        if (membership.getRole() == CenterRole.OWNER) {
+            throw new StaffOperationException(BusinessErrorCodes.CANNOT_REMOVE_OWNER,
+                    "Cannot change Owner role");
         }
 
-        // Check if trying to assign OWNER role (only one owner allowed)
-        if (request.getRole() == CenterRole.OWNER && !membership.getRole().equals(CenterRole.OWNER)) {
-            throw new IllegalArgumentException("Cannot assign OWNER role. Only the original owner can have this role");
+        // Cannot assign OWNER role to someone else
+        if (request.getRole() == CenterRole.OWNER) {
+            throw new IllegalArgumentException("Cannot assign OWNER role via role update");
+        }
+
+        // Check caller can manage this member's CURRENT role
+        if (!canManageMember(membership, caller)) {
+            throw new StaffOperationException(BusinessErrorCodes.INSUFFICIENT_ROLE_SCOPE,
+                    "You do not have permission to manage this member");
+        }
+
+        // EC-7: Check caller can assign the TARGET role.
+        // Changing to BRANCH_MANAGER or ACCOUNTANT requires MANAGE_ALL_STAFF (Owner only).
+        if (!callerMembership.getRole().hasPermission(CenterPermission.MANAGE_ALL_STAFF)) {
+            if (request.getRole() == CenterRole.BRANCH_MANAGER || request.getRole() == CenterRole.ACCOUNTANT) {
+                throw new StaffOperationException(BusinessErrorCodes.INSUFFICIENT_ROLE_SCOPE,
+                        "Only the Owner can assign Branch Manager or Accountant roles");
+            }
         }
 
         membership.setRole(request.getRole());
@@ -145,14 +187,21 @@ public class StaffService {
         MaintenanceCenter center = membership.getCenter();
         checkMembershipPermission(center, caller);
 
-        // Check if caller can manage this member
-        if (!canManageMember(membership, caller)) {
-            throw new AccessDeniedException("You do not have permission to manage this member");
+        // Cannot remove the owner (3006)
+        if (membership.getRole() == CenterRole.OWNER) {
+            throw new StaffOperationException(BusinessErrorCodes.CANNOT_REMOVE_OWNER);
         }
 
-        // Cannot remove the owner
-        if (membership.getRole() == CenterRole.OWNER) {
-            throw new IllegalArgumentException("Cannot remove the center owner");
+        // Owners cannot remove themselves via this endpoint
+        if (membership.getUser().getId().equals(caller.getId())) {
+            throw new StaffOperationException(BusinessErrorCodes.CANNOT_REMOVE_OWNER,
+                    "Owners cannot remove themselves");
+        }
+
+        // Check if caller can manage this member (3007)
+        if (!canManageMember(membership, caller)) {
+            throw new StaffOperationException(BusinessErrorCodes.INSUFFICIENT_ROLE_SCOPE,
+                    "You do not have permission to manage this member");
         }
 
         membership.setStatus(MembershipStatus.REMOVED);
@@ -169,14 +218,16 @@ public class StaffService {
         MaintenanceCenter center = membership.getCenter();
         checkMembershipPermission(center, caller);
 
-        // Check if caller can manage this member
-        if (!canManageMember(membership, caller)) {
-            throw new AccessDeniedException("You do not have permission to manage this member");
-        }
-
         // Cannot suspend the owner
         if (membership.getRole() == CenterRole.OWNER) {
-            throw new IllegalArgumentException("Cannot suspend the center owner");
+            throw new StaffOperationException(BusinessErrorCodes.CANNOT_REMOVE_OWNER,
+                    "Cannot suspend the center owner");
+        }
+
+        // Check if caller can manage this member (3007)
+        if (!canManageMember(membership, caller)) {
+            throw new StaffOperationException(BusinessErrorCodes.INSUFFICIENT_ROLE_SCOPE,
+                    "You do not have permission to manage this member");
         }
 
         membership.setStatus(MembershipStatus.SUSPENDED);
@@ -194,9 +245,10 @@ public class StaffService {
         MaintenanceCenter center = membership.getCenter();
         checkMembershipPermission(center, caller);
 
-        // Check if caller can manage this member
+        // Check if caller can manage this member (3007)
         if (!canManageMember(membership, caller)) {
-            throw new AccessDeniedException("You do not have permission to manage this member");
+            throw new StaffOperationException(BusinessErrorCodes.INSUFFICIENT_ROLE_SCOPE,
+                    "You do not have permission to manage this member");
         }
 
         membership.setStatus(MembershipStatus.ACTIVE);
@@ -215,9 +267,10 @@ public class StaffService {
                 .findFirst()
                 .orElseThrow(() -> new EntityNotFoundException("No active membership found"));
 
-        // Owner cannot leave their own center
+        // Owner cannot leave their own center (3006)
         if (activeMembership.getRole() == CenterRole.OWNER) {
-            throw new IllegalArgumentException("Owner cannot leave the center. Please transfer ownership first");
+            throw new StaffOperationException(BusinessErrorCodes.CANNOT_REMOVE_OWNER,
+                    "Owners cannot leave. Transfer ownership first.");
         }
 
         activeMembership.setStatus(MembershipStatus.REMOVED);
@@ -232,10 +285,12 @@ public class StaffService {
                 .orElseThrow(() -> new EntityNotFoundException("Invitation not found with id: " + invitationId));
 
         MaintenanceCenter center = invitation.getCenter();
-        checkMembershipPermission(center, caller);
+        // Check caller can invite for this role (enforces scope — BM cannot resend BM/Accountant invites)
+        checkCanInviteStaff(center, caller, invitation.getTargetRole());
 
         if (invitation.getStatus() != InvitationStatus.PENDING) {
-            throw new IllegalArgumentException("Can only resend pending invitations");
+            throw new StaffOperationException(BusinessErrorCodes.INVITATION_NOT_PENDING,
+                    "Can only resend pending invitations");
         }
 
         // Update expiration time
@@ -267,19 +322,22 @@ public class StaffService {
         StaffInvitation invitation = invitationRepository.findByToken(token)
                 .orElseThrow(() -> new EntityNotFoundException("Invalid invitation token"));
 
-        // Validate invitation
+        // Validate invitation status (3004)
         if (invitation.getStatus() != InvitationStatus.PENDING) {
-            throw new IllegalArgumentException("Invitation is not pending. Status: " + invitation.getStatus());
+            throw new StaffOperationException(BusinessErrorCodes.INVITATION_NOT_PENDING,
+                    "Invitation is not pending. Status: " + invitation.getStatus());
         }
 
         if (invitation.getExpiresAt().isBefore(LocalDateTime.now())) {
             invitation.setStatus(InvitationStatus.EXPIRED);
             invitationRepository.save(invitation);
-            throw new IllegalArgumentException("Invitation has expired");
+            throw new StaffOperationException(BusinessErrorCodes.INVITATION_NOT_PENDING,
+                    "Invitation has expired");
         }
 
+        // Email must match (3005)
         if (!invitation.getTargetEmail().equalsIgnoreCase(user.getEmail())) {
-            throw new IllegalArgumentException("This invitation is for a different email address");
+            throw new StaffOperationException(BusinessErrorCodes.INVITATION_EMAIL_MISMATCH);
         }
 
         // Check if user is already a member
@@ -301,9 +359,13 @@ public class StaffService {
         userRepository.save(user);
         log.info("Set user {} type to STAFF and assigned ROLE_STAFF on invitation acceptance", user.getId());
 
-        // Create membership
+        // Create membership — cache the user's name + email so historical
+        // attribution (FR-011) survives later deletion of the User row.
         CenterMembership membership = CenterMembership.builder()
                 .user(user)
+                .userFirstname(user.getFirstname())
+                .userLastname(user.getLastname())
+                .userEmail(user.getEmail())
                 .center(invitation.getCenter())
                 .role(invitation.getTargetRole())
                 .status(MembershipStatus.ACTIVE)
@@ -329,11 +391,12 @@ public class StaffService {
                 .orElseThrow(() -> new EntityNotFoundException("Invalid invitation token"));
 
         if (invitation.getStatus() != InvitationStatus.PENDING) {
-            throw new IllegalArgumentException("Invitation is not pending. Status: " + invitation.getStatus());
+            throw new StaffOperationException(BusinessErrorCodes.INVITATION_NOT_PENDING,
+                    "Invitation is not pending. Status: " + invitation.getStatus());
         }
 
         if (!invitation.getTargetEmail().equalsIgnoreCase(user.getEmail())) {
-            throw new IllegalArgumentException("This invitation is for a different email address");
+            throw new StaffOperationException(BusinessErrorCodes.INVITATION_EMAIL_MISMATCH);
         }
 
         invitation.setStatus(InvitationStatus.DECLINED);
@@ -373,47 +436,99 @@ public class StaffService {
     }
 
     public MaintenanceCenter getCallerCenter(User caller) {
-        return centerRepository.findFirstByOwnerId(caller.getId())
-                .orElseThrow(() -> new EntityNotFoundException("No center found for this owner"));
+        // Try owner path first
+        var owned = centerRepository.findFirstByOwnerId(caller.getId());
+        if (owned.isPresent()) {
+            return owned.get();
+        }
+
+        // Fall back to active membership (Branch Manager, etc.)
+        return membershipRepository.findByUserIdAndStatus(caller.getId(), MembershipStatus.ACTIVE)
+                .stream()
+                .findFirst()
+                .map(CenterMembership::getCenter)
+                .orElseThrow(() -> new EntityNotFoundException("No center found for this user"));
     }
 
-    private void checkMembershipPermission(MaintenanceCenter center, User caller) {
-        if (!center.getOwner().getId().equals(caller.getId())) {
+    /**
+     * Check that the caller has at least staff-viewing permission at this center.
+     * Owners and Branch Managers can view the staff list.
+     */
+    private CenterMembership checkMembershipPermission(MaintenanceCenter center, User caller) {
+        // OWNER always has MANAGE_ALL_STAFF; BRANCH_MANAGER has MANAGE_NON_MANAGER_STAFF
+        // Either permission is sufficient to VIEW the staff list
+        CenterMembership membership = centerSecurity.resolveMembership(center.getId(), caller)
+                .orElseThrow(() -> new AccessDeniedException("You do not have access to this center"));
+        if (!membership.getRole().hasPermission(CenterPermission.MANAGE_ALL_STAFF)
+                && !membership.getRole().hasPermission(CenterPermission.MANAGE_NON_MANAGER_STAFF)) {
             throw new AccessDeniedException("You do not have permission to manage this center's staff");
         }
+        return membership;
     }
 
-    private void checkCanInviteStaff(MaintenanceCenter center, User caller) {
-        checkMembershipPermission(center, caller);
+    /**
+     * Check that the caller can invite staff. OWNER can invite anyone.
+     * BRANCH_MANAGER can only invite TECHNICIAN and RECEPTIONIST.
+     */
+    private CenterMembership checkCanInviteStaff(MaintenanceCenter center, User caller, CenterRole targetRole) {
+        CenterMembership callerMembership = checkMembershipPermission(center, caller);
+
+        if (callerMembership.getRole().hasPermission(CenterPermission.MANAGE_ALL_STAFF)) {
+            return callerMembership;
+        }
+
+        // MANAGE_NON_MANAGER_STAFF: can only invite Technicians and Receptionists
+        // (not BMs, Accountants, or Owners — amendment D)
+        if (callerMembership.getRole().hasPermission(CenterPermission.MANAGE_NON_MANAGER_STAFF)) {
+            if (targetRole != CenterRole.TECHNICIAN && targetRole != CenterRole.RECEPTIONIST) {
+                throw new StaffOperationException(BusinessErrorCodes.INSUFFICIENT_ROLE_SCOPE,
+                        "Branch Managers can only invite Technicians and Receptionists");
+            }
+            return callerMembership;
+        }
+
+        throw new StaffOperationException(BusinessErrorCodes.INSUFFICIENT_ROLE_SCOPE,
+                "You do not have permission to invite staff");
     }
 
     private boolean canManageMember(CenterMembership membership, User caller) {
-        // Owner can manage everyone
-        if (membership.getCenter().getOwner().getId().equals(caller.getId())) {
-            return true;
-        }
-
-        // Check if caller is a branch manager
-        CenterMembership callerMembership = membershipRepository
-                .findByCenterIdAndUserId(membership.getCenter().getId(), caller.getId())
-                .orElse(null);
-
-        if (callerMembership == null || callerMembership.getRole() != CenterRole.BRANCH_MANAGER) {
+        CenterMembership callerMembership = centerSecurity.resolveMembership(
+                membership.getCenter().getId(), caller).orElse(null);
+        if (callerMembership == null) {
             return false;
         }
 
-        // Branch manager can only manage non-manager staff
-        return membership.getRole() != CenterRole.OWNER && 
-               membership.getRole() != CenterRole.BRANCH_MANAGER;
+        // OWNER (MANAGE_ALL_STAFF) can manage everyone except themselves
+        if (callerMembership.getRole().hasPermission(CenterPermission.MANAGE_ALL_STAFF)) {
+            return true;
+        }
+
+        // BRANCH_MANAGER (MANAGE_NON_MANAGER_STAFF) can manage Technicians and Receptionists only.
+        // Accountants are excluded per spec 011 amendment D — they have revenue access.
+        if (callerMembership.getRole().hasPermission(CenterPermission.MANAGE_NON_MANAGER_STAFF)) {
+            return membership.getRole() == CenterRole.TECHNICIAN
+                    || membership.getRole() == CenterRole.RECEPTIONIST;
+        }
+
+        return false;
     }
 
     private CenterMembershipResponse toMembershipResponse(CenterMembership membership) {
+        // Prefer cached attribution; fall back to the live User FK for rows
+        // written before the cache columns existed.
+        User user = membership.getUser();
+        String firstname = membership.getUserFirstname() != null
+                ? membership.getUserFirstname() : (user != null ? user.getFirstname() : null);
+        String lastname = membership.getUserLastname() != null
+                ? membership.getUserLastname() : (user != null ? user.getLastname() : null);
+        String email = membership.getUserEmail() != null
+                ? membership.getUserEmail() : (user != null ? user.getEmail() : null);
         return CenterMembershipResponse.builder()
                 .id(membership.getId())
-                .userId(membership.getUser().getId())
-                .userFirstname(membership.getUser().getFirstname())
-                .userLastname(membership.getUser().getLastname())
-                .userEmail(membership.getUser().getEmail())
+                .userId(user != null ? user.getId() : null)
+                .userFirstname(firstname)
+                .userLastname(lastname)
+                .userEmail(email)
                 .role(membership.getRole())
                 .roleAr(membership.getRole().getArabic())
                 .roleEn(membership.getRole().getEnglish())

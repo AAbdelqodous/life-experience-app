@@ -4,6 +4,11 @@ import com.maintainance.service_center.center.CenterResolverService;
 import com.maintainance.service_center.center.MaintenanceCenter;
 import com.maintainance.service_center.center.MaintenanceCenterRepository;
 import com.maintainance.service_center.common.PageResponse;
+import com.maintainance.service_center.staff.CenterMembership;
+import com.maintainance.service_center.staff.CenterMembershipRepository;
+import com.maintainance.service_center.staff.CenterPermission;
+import com.maintainance.service_center.staff.CenterSecurityService;
+import com.maintainance.service_center.staff.MembershipStatus;
 import com.maintainance.service_center.user.User;
 import com.maintainance.service_center.user.UserType;
 import jakarta.persistence.EntityNotFoundException;
@@ -25,6 +30,8 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final MaintenanceCenterRepository centerRepository;
     private final CenterResolverService centerResolver;
+    private final CenterSecurityService centerSecurity;
+    private final CenterMembershipRepository centerMembershipRepository;
 
     @Transactional
     public ReviewResponse createReview(ReviewRequest request, User user) {
@@ -52,22 +59,13 @@ public class ReviewService {
         return mapToResponse(savedReview);
     }
 
-    public ReviewStatsResponse getReviewStats(User owner) {
-        if (owner == null) {
+    public ReviewStatsResponse getReviewStats(User caller) {
+        if (caller == null) {
             throw new IllegalArgumentException("User must be authenticated");
         }
-        
-        // Verify user is a center owner
-        if (owner.getUserType() != UserType.OWNER) {
-            throw new AccessDeniedException("Only center owners can access review statistics");
-        }
-        
-        MaintenanceCenter center = centerRepository.findByOwnerIdAndIsActiveTrue(
-                        owner.getId(), PageRequest.of(0, 1))
-                .getContent()
-                .stream()
-                .findFirst()
-                .orElseThrow(() -> new EntityNotFoundException("No active center found for this owner"));
+
+        // Resolve the caller's center (works for owner and staff with active membership)
+        MaintenanceCenter center = centerResolver.resolveCenter(caller);
 
         long total = reviewRepository.countByCenterId(center.getId());
         Double avg = reviewRepository.calculateAverageRating(center.getId());
@@ -144,21 +142,40 @@ public class ReviewService {
     }
 
     @Transactional
-    public ReviewResponse replyToReview(Long reviewId, String reply, User owner) {
-        log.info("Owner {} replying to review {}", owner.getId(), reviewId);
+    public ReviewResponse replyToReview(Long reviewId, String reply, User caller) {
+        log.info("User {} replying to review {}", caller.getId(), reviewId);
 
         Review review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new EntityNotFoundException("Review not found"));
 
-        if (!review.getCenter().getOwner().getId().equals(owner.getId())) {
-            throw new IllegalArgumentException("You can only reply to reviews for your own center");
-        }
+        // Permission check: RESPOND_REVIEWS required (Owner, Branch Manager)
+        centerSecurity.requirePermission(
+                review.getCenter().getId(), caller, CenterPermission.RESPOND_REVIEWS);
 
         review.setCenterResponse(reply);
         review.setCenterResponseDate(java.time.LocalDateTime.now());
         reviewRepository.save(review);
 
         return mapToResponse(review);
+    }
+
+    public PageResponse<ReviewResponse> getMyAssignedReviews(User caller, int page, int size) {
+        log.info("Fetching reviews for staff user {}'s assigned bookings", caller.getId());
+
+        if (caller.getUserType() != UserType.STAFF) {
+            throw new AccessDeniedException("Only staff members can access assigned reviews");
+        }
+
+        CenterMembership membership = centerMembershipRepository
+                .findByUserIdAndStatus(caller.getId(), MembershipStatus.ACTIVE)
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new AccessDeniedException("No active center membership found"));
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<Review> reviews = reviewRepository.findByAssignedMembershipId(membership.getId(), pageable);
+
+        return PageResponse.of(reviews.map(this::mapToResponse));
     }
 
     private ReviewResponse mapToResponse(Review review) {

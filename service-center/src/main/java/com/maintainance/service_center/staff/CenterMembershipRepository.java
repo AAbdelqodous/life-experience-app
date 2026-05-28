@@ -35,4 +35,24 @@ public interface CenterMembershipRepository extends JpaRepository<CenterMembersh
                                                              @Param("status") MembershipStatus status);
 
     boolean existsByCenterIdAndUserId(Long centerId, Integer userId);
+
+    @Query("SELECT COUNT(m) FROM CenterMembership m WHERE m.center.id = :centerId AND m.status IN :statuses")
+    long countByCenterIdAndStatusIn(@Param("centerId") Long centerId, @Param("statuses") List<MembershipStatus> statuses);
+
+    // Department-aware queries — spec 020
+
+    @Query("SELECT COUNT(m) FROM CenterMembership m JOIN m.departments d " +
+           "WHERE d.id = :departmentId AND m.status = :status")
+    long countByDepartmentIdAndStatus(@Param("departmentId") Long departmentId,
+                                       @Param("status") MembershipStatus status);
+
+    @Query("SELECT m FROM CenterMembership m JOIN m.departments d " +
+           "WHERE d.id = :departmentId AND m.status = :status")
+    List<CenterMembership> findByDepartmentIdAndStatus(@Param("departmentId") Long departmentId,
+                                                        @Param("status") MembershipStatus status);
+
+    @Query("SELECT m FROM CenterMembership m WHERE m.center.id = :centerId AND m.role = :role AND m.status = :status")
+    List<CenterMembership> findByCenterIdAndRoleAndStatus(@Param("centerId") Long centerId,
+                                                          @Param("role") CenterRole role,
+                                                          @Param("status") MembershipStatus status);
 }

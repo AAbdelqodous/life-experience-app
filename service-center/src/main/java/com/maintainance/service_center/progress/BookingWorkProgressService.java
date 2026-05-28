@@ -2,15 +2,17 @@ package com.maintainance.service_center.progress;
 
 import com.maintainance.service_center.booking.Booking;
 import com.maintainance.service_center.booking.BookingRepository;
-import com.maintainance.service_center.center.MaintenanceCenter;
-import com.maintainance.service_center.center.MaintenanceCenterRepository;
+import com.maintainance.service_center.staff.CenterMembership;
+import com.maintainance.service_center.staff.CenterPermission;
+import com.maintainance.service_center.staff.CenterRole;
+import com.maintainance.service_center.staff.CenterSecurityService;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.EntityNotFoundException;
-import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -21,100 +23,133 @@ public class BookingWorkProgressService {
 
     private final BookingWorkProgressRepository bookingWorkProgressRepository;
     private final BookingRepository bookingRepository;
-    private final MaintenanceCenterRepository centerRepository;
+    private final CenterSecurityService centerSecurity;
 
     public List<BookingWorkProgressResponse> getProgressForCustomer(Long bookingId, User customer) {
-        // Fetch booking
         Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> {
-                    log.warn("Booking not found for ID: {}", bookingId);
-                    return new EntityNotFoundException("Booking not found with ID: " + bookingId);
-                });
+                .orElseThrow(() -> new EntityNotFoundException("Booking not found with ID: " + bookingId));
 
-        // Verify booking belongs to the authenticated customer
         if (!booking.getCustomer().getId().equals(customer.getId())) {
-            log.warn("Access denied: User {} attempted to access booking {} progress belonging to user {}", 
-                    customer.getId(), bookingId, booking.getCustomer().getId());
             throw new AccessDeniedException("You do not have permission to access this booking");
         }
 
-        // Fetch progress entries ordered by createdAt ASC
-        List<BookingWorkProgress> progressList = bookingWorkProgressRepository
-                .findByBookingIdOrderByCreatedAtAsc(bookingId);
-
-        log.info("Retrieved {} progress entries for booking {} by user {}", 
-                progressList.size(), bookingId, customer.getId());
-
-        // Convert to response DTOs (internalNotes is excluded from the response DTO)
-        return progressList.stream()
+        return bookingWorkProgressRepository.findByBookingIdOrderByCreatedAtAsc(bookingId).stream()
                 .map(this::toCustomerResponse)
                 .toList();
     }
 
-    public List<BookingWorkProgressResponse> getProgressForOwner(Long bookingId, User owner) {
-        // Verify booking belongs to the authenticated center owner
-        Booking booking = getBookingForOwner(bookingId, owner);
-
-        // Fetch progress entries ordered by createdAt ASC
-        List<BookingWorkProgress> progressList = bookingWorkProgressRepository
-                .findByBookingIdOrderByCreatedAtAsc(bookingId);
-
-        log.info("Retrieved {} progress entries for booking {} by owner {}", 
-                progressList.size(), bookingId, owner.getId());
-
-        // Convert to response DTOs (includes all fields including internalNotes)
-        return progressList.stream()
+    public List<BookingWorkProgressResponse> getProgressForOwner(Long bookingId, User caller) {
+        Booking booking = getBookingForCenterMember(bookingId, caller);
+        return bookingWorkProgressRepository.findByBookingIdOrderByCreatedAtAsc(booking.getId()).stream()
                 .map(this::toOwnerResponse)
                 .toList();
     }
 
+    /**
+     * Update the booking's current work stage and record a timeline entry capturing the transition.
+     * <p>Enforces {@link WorkStage#canTransitionTo}: any non-listed transition is a 400. This is the
+     * server-side enforcement promised by spec 009 FR-002 — the client's UI restriction is a UX
+     * safeguard, not the source of truth.
+     */
     @Transactional
-    public void updateWorkStage(Long bookingId, User owner, UpdateWorkStageRequest request) {
-        Booking booking = getBookingForOwner(bookingId, owner);
-        booking.setWorkStage(request.getStage());
-        log.info("Updated work stage to {} for booking {} by owner {}", request.getStage(), bookingId, owner.getId());
+    public void updateWorkStage(Long bookingId, User caller, UpdateWorkStageRequest request) {
+        Booking booking = getBookingForWriter(bookingId, caller, CenterPermission.UPDATE_WORK_STAGE);
+
+        WorkStage current = booking.getWorkStage();
+        WorkStage target = request.getStage();
+
+        // If a booking has no prior stage, the only valid first stage is RECEIVED.
+        if (current == null) {
+            if (target != WorkStage.RECEIVED) {
+                throw new IllegalArgumentException(
+                        "First stage must be RECEIVED; attempted: " + target);
+            }
+        } else if (!current.canTransitionTo(target)) {
+            throw new IllegalArgumentException(
+                    "Invalid stage transition: " + current + " → " + target
+                            + ". Allowed next stages: " + current.getNextStageNames());
+        }
+
+        booking.setWorkStage(target);
+        // JPA dirty-checking flushes booking.workStage at transaction commit.
+
+        // Record a timeline entry so the Progress tab reflects the transition (spec FR-005).
+        bookingWorkProgressRepository.save(BookingWorkProgress.builder()
+                .booking(booking)
+                .stage(target)
+                .notes(request.getNotes())
+                .notesAr(request.getNotesAr())
+                .internalNotes(request.getInternalNotes())
+                .estimatedMinutesRemaining(request.getEstimatedMinutesRemaining())
+                .createdByName(displayName(caller))
+                .build());
+
+        log.info("Stage transition {} → {} for booking {} by user {}",
+                current, target, bookingId, caller.getId());
     }
 
     @Transactional
-    public BookingWorkProgressResponse createWorkProgress(Long bookingId, User owner,
-            CreateWorkProgressRequest request, String fileUrl) {
-        // Verify booking belongs to the authenticated center owner
-        Booking booking = getBookingForOwner(bookingId, owner);
+    public BookingWorkProgressResponse createWorkProgress(Long bookingId, User caller,
+                                                          CreateWorkProgressRequest request) {
+        Booking booking = getBookingForWriter(bookingId, caller, CenterPermission.UPDATE_WORK_STAGE);
 
-        // Create work progress
         BookingWorkProgress progress = BookingWorkProgress.builder()
                 .booking(booking)
                 .stage(booking.getWorkStage() != null ? booking.getWorkStage() : WorkStage.RECEIVED)
                 .notes(request.getNotes())
                 .notesAr(request.getNotesAr())
                 .internalNotes(request.getInternalNotes())
-                .photoUrl(fileUrl)
                 .estimatedMinutesRemaining(request.getEstimatedMinutesRemaining())
-                .createdByName(owner.getFirstname() + " " + owner.getLastname())
+                .createdByName(displayName(caller))
                 .build();
 
         BookingWorkProgress saved = bookingWorkProgressRepository.save(progress);
-
-        log.info("Created work progress for booking {} by owner {}", bookingId, owner.getId());
-
+        log.info("Created progress entry id={} for booking {}", saved.getId(), bookingId);
         return toOwnerResponse(saved);
     }
 
-    private Booking getBookingForOwner(Long bookingId, User owner) {
+    /**
+     * Resolves the booking and verifies the caller can read it (any active member of the
+     * booking's center). Used by GET endpoints.
+     */
+    private Booking getBookingForCenterMember(Long bookingId, User caller) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new EntityNotFoundException("Booking not found with id: " + bookingId));
-
-        MaintenanceCenter center = centerRepository.findFirstByOwnerId(owner.getId())
-                .orElseThrow(() -> new EntityNotFoundException("Maintenance center not found for owner"));
-
-        if (!booking.getCenter().getId().equals(center.getId())) {
-            throw new AccessDeniedException("You do not have access to this booking");
-        }
-
+        centerSecurity.requireActiveMembership(booking.getCenter().getId(), caller);
         return booking;
     }
 
-    // internalNotes intentionally excluded from customer view
+    /**
+     * Resolves the booking and verifies the caller may WRITE work-progress on it:
+     * <ul>
+     *   <li>they have an active membership at the booking's center,</li>
+     *   <li>they hold the required permission (e.g. UPDATE_WORK_STAGE),</li>
+     *   <li>if they are a TECHNICIAN, the booking is assigned to their membership.</li>
+     * </ul>
+     */
+    private Booking getBookingForWriter(Long bookingId, User caller, CenterPermission permission) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new EntityNotFoundException("Booking not found with id: " + bookingId));
+
+        CenterMembership membership = centerSecurity.requirePermission(
+                booking.getCenter().getId(), caller, permission);
+
+        if (membership.getRole() == CenterRole.TECHNICIAN) {
+            CenterMembership assigned = booking.getAssignedMembership();
+            if (assigned == null || !assigned.getId().equals(membership.getId())) {
+                throw new AccessDeniedException(
+                        "Technicians may only update work progress on bookings assigned to them");
+            }
+        }
+        return booking;
+    }
+
+    private String displayName(User u) {
+        return (u.getFirstname() == null ? "" : u.getFirstname())
+                + (u.getLastname() == null ? "" : " " + u.getLastname());
+    }
+
+    // Customer view: hides internalNotes
     private BookingWorkProgressResponse toCustomerResponse(BookingWorkProgress progress) {
         return BookingWorkProgressResponse.builder()
                 .id(progress.getId())

@@ -51,6 +51,8 @@ public class UserResponse {
     
     private UserType userType;
 
+    private Integer affiliatedCenterId;
+
     private ApprovalStatus approvalStatus;
 
     private String rejectionReason;

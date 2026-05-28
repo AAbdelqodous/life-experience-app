@@ -111,6 +111,7 @@ class Phase36IntegrationTest {
                 .owner(owner)
                 .isVerified(false)
                 .isActive(true)
+                .enabled(true)
                 .build());
         centerId = center.getId();
 
