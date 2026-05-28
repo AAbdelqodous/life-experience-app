@@ -18,7 +18,13 @@ import java.util.Map;
 @RestController
 @RequestMapping("centers/my/staff")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('OWNER')")
+// Class-level guard is the coarse cut: OWNER or STAFF (which covers Branch Manager,
+// Receptionist, Technician, Accountant). Per-endpoint fine-grained permission
+// enforcement (MANAGE_NON_MANAGER_STAFF vs MANAGE_ALL_STAFF, target-role scope,
+// EC-7, etc.) lives in StaffService — see checkMembershipPermission,
+// checkCanInviteStaff, and canManageMember. Centralising it there avoids
+// duplicating spec 011's permission matrix in @PreAuthorize SpEL expressions.
+@PreAuthorize("hasAnyRole('OWNER', 'STAFF')")
 @Tag(name = "Center Staff Management")
 @SecurityRequirement(name = "bearerAuth")
 public class StaffController {
