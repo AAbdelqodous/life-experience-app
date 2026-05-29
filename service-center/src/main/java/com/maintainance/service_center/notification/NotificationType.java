@@ -39,6 +39,12 @@ public enum NotificationType {
     DISCOUNT,
     NEW_CENTER_NEARBY,
 
+    // Quote requests / marketplace (spec 009/024)
+    NEW_QUOTE_REQUEST,   // → matched center: a new lead arrived
+    QUOTE_RECEIVED,      // → customer: a center quoted your request
+    QUOTE_ACCEPTED,      // → center: you won the job
+    QUOTE_NOT_SELECTED,  // → center: customer chose another center
+
     // System
     SYSTEM_MAINTENANCE,
     SYSTEM_UPDATE,

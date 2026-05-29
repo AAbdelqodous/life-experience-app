@@ -73,6 +73,9 @@ public class Booking {
     @Column(length = 500)
     private String serviceDescription;
 
+    /** Spec 009/024 — set when this booking was created by accepting a quote request. */
+    private Long originRequestId;
+
     @Column(length = 1000)
     private String problemDescription;
 
