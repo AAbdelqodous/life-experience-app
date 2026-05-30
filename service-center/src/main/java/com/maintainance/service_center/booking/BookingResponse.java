@@ -42,6 +42,8 @@ public class BookingResponse {
     private BigDecimal estimatedCost;
     private BigDecimal finalCost;
     private String costNotes;
+    /** Spec 023 — deposit required at booking creation (null/zero = none). */
+    private BigDecimal depositAmount;
     private PaymentMethod paymentMethod;
     private PaymentStatus paymentStatus;
     private LocalDateTime paidAt;

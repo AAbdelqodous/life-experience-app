@@ -42,5 +42,9 @@ public enum CenterPermission {
 
     // Quote requests inbox (spec 024). Respond to customer quote requests: view the inbox,
     // submit/edit/withdraw the center's quote. Held by OWNER, BRANCH_MANAGER, RECEPTIONIST.
-    RESPOND_TO_QUOTES
+    RESPOND_TO_QUOTES,
+
+    // Payments/earnings/payouts (spec 023). Manage payout account, request payouts, issue refunds.
+    // Held by OWNER, BRANCH_MANAGER, ACCOUNTANT. (Earnings *viewing* reuses VIEW_REVENUE.)
+    MANAGE_PAYOUTS
 }

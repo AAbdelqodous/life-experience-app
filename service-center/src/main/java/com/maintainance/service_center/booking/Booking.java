@@ -97,6 +97,15 @@ public class Booking {
     private BigDecimal finalCost;
     private String costNotes;
 
+    /**
+     * Spec 023 — the deposit the center required for this booking, snapshotted at creation from the
+     * center's DepositConfig (cut no-shows). Null/zero = no deposit. A plain amount so the booking
+     * package stays decoupled from the payment package (set via BookingDepositListener on the
+     * payment side); it is later applied to the final invoice.
+     */
+    @Column(name = "deposit_amount", precision = 10, scale = 3)
+    private BigDecimal depositAmount;
+
     @Enumerated(EnumType.STRING)
     private PaymentMethod paymentMethod;
 
