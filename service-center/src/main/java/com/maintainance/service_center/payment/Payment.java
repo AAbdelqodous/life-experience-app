@@ -72,6 +72,11 @@ public class Payment {
     @Column(nullable = false)
     private PaymentStatus status = PaymentStatus.PENDING;
 
+    /** Spec 023 — DEPOSIT (upfront, at booking) vs FULL (balance). Nullable column; null = FULL. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "kind")
+    private PaymentKind kind = PaymentKind.FULL;
+
     /** Client-supplied, unique per attempt — guarantees idempotent initiation (FR-011). */
     @Column(unique = true)
     private String idempotencyKey;

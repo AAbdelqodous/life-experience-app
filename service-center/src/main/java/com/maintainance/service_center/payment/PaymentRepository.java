@@ -10,6 +10,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     /** Idempotent initiation: reuse an existing attempt for the same key. */
     Optional<Payment> findByIdempotencyKey(String idempotencyKey);
 
+    /** Resolve a payment from the gateway's reference — used by the hosted-checkout callback/webhook. */
+    Optional<Payment> findByGatewayReference(String gatewayReference);
+
     /** Active payment(s) for a booking, newest first. */
     List<Payment> findByBookingIdOrderByCreatedAtDesc(Long bookingId);
 

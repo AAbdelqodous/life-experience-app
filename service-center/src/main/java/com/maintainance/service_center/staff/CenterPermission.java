@@ -46,5 +46,11 @@ public enum CenterPermission {
 
     // Payments/earnings/payouts (spec 023). Manage payout account, request payouts, issue refunds.
     // Held by OWNER, BRANCH_MANAGER, ACCOUNTANT. (Earnings *viewing* reuses VIEW_REVENUE.)
-    MANAGE_PAYOUTS
+    MANAGE_PAYOUTS,
+
+    // Inventory & parts (spec 025). MANAGE_INVENTORY = catalog CRUD + receive/adjust stock
+    // (OWNER, BRANCH_MANAGER); CONSUME_PARTS = add catalogued parts onto a booking's quote
+    // (OWNER, BRANCH_MANAGER, RECEPTIONIST, TECHNICIAN).
+    MANAGE_INVENTORY,
+    CONSUME_PARTS
 }

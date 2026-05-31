@@ -69,24 +69,132 @@ public class CenterPaymentService {
      */
     @Transactional
     public MarkCompleteResponse markReleaseEligible(Long bookingId) {
-        Payment latest = paymentRepository.findByBookingIdOrderByCreatedAtDesc(bookingId)
-                .stream().findFirst().orElse(null);
-        if (latest == null) {
-            // No escrow payment (e.g. cash booking) — nothing to release, completion still succeeds.
+        // Flag every held payment for the booking — deposit + balance both become releasable (023).
+        List<Payment> held = paymentRepository.findByBookingIdOrderByCreatedAtDesc(bookingId).stream()
+                .filter(p -> p.getStatus() == PaymentStatus.HELD)
+                .toList();
+        if (held.isEmpty()) {
+            // No held escrow (e.g. cash booking, or already settled) — completion still succeeds.
             return new MarkCompleteResponse(bookingId, true, null);
         }
-        if (latest.getStatus() != PaymentStatus.HELD) {
-            // Already released/refunded/pending — leave it; only a HELD payment becomes eligible.
-            return new MarkCompleteResponse(bookingId, latest.isReleaseEligible(), latest.getAutoReleaseAt());
+        LocalDateTime autoReleaseAt = null;
+        for (Payment p : held) {
+            p.setReleaseEligible(true);
+            if (p.getAutoReleaseAt() == null) {
+                p.setAutoReleaseAt(LocalDateTime.now().plusHours(AUTO_RELEASE_HOURS));
+            }
+            autoReleaseAt = p.getAutoReleaseAt();
         }
-        latest.setReleaseEligible(true);
-        if (latest.getAutoReleaseAt() == null) {
-            latest.setAutoReleaseAt(LocalDateTime.now().plusHours(AUTO_RELEASE_HOURS));
+        paymentRepository.saveAll(held);
+        log.info("Booking {} completed → {} held payment(s) release-eligible (auto-release at {})",
+                bookingId, held.size(), autoReleaseAt);
+        return new MarkCompleteResponse(bookingId, true, autoReleaseAt);
+    }
+
+    // ── Deposit application (spec 023: snapshot the center's deposit at booking creation) ──
+
+    /**
+     * Applies the center's deposit policy to a freshly created booking, snapshotting the required
+     * amount onto {@code booking.depositAmount}. Triggered by {@link BookingDepositListener} on the
+     * BookingCreatedEvent, inside the creation transaction. No-op when the center requires no deposit
+     * (or, for PERCENT, when there is no estimate yet — that is deferred to quote time).
+     */
+    @Transactional
+    public void applyDepositOnCreation(Long bookingId) {
+        Booking booking = loadBooking(bookingId);
+        DepositConfig cfg = depositConfigRepository.findByCenterId(booking.getCenter().getId()).orElse(null);
+        BigDecimal deposit = computeDeposit(cfg, booking);
+        if (deposit != null && deposit.signum() > 0) {
+            booking.setDepositAmount(deposit);
+            bookingRepository.save(booking);
+            log.info("Booking {} requires a {} KD deposit (mode {})", bookingId, deposit, cfg.getMode());
         }
-        paymentRepository.save(latest);
-        log.info("Booking {} completed → payment {} release-eligible (auto-release at {})",
-                bookingId, latest.getId(), latest.getAutoReleaseAt());
-        return new MarkCompleteResponse(bookingId, true, latest.getAutoReleaseAt());
+    }
+
+    /** Resolves the deposit amount for a booking from the center's policy; null when none applies. */
+    private BigDecimal computeDeposit(DepositConfig cfg, Booking booking) {
+        if (cfg == null || cfg.getMode() == DepositMode.NONE) {
+            return null;
+        }
+        // Service-scoped policy: applies only to the configured service (null = center-wide).
+        if (cfg.getAppliesToServiceId() != null) {
+            Long bookingServiceId = booking.getService() != null ? booking.getService().getId() : null;
+            if (!cfg.getAppliesToServiceId().equals(bookingServiceId)) {
+                return null;
+            }
+        }
+        if (cfg.getMode() == DepositMode.FLAT) {
+            return cfg.getFlatAmount();
+        }
+        // PERCENT — needs an estimate to size against; deferred to quote time if absent at creation.
+        BigDecimal base = booking.getEstimatedCost();
+        if (base == null || cfg.getPercent() == null) {
+            return null;
+        }
+        return base
+                .multiply(BigDecimal.valueOf(cfg.getPercent()))
+                .divide(BigDecimal.valueOf(100), 3, RoundingMode.HALF_UP);
+    }
+
+    // ── Cancellation disposition (spec 023: refund balance; forfeit/refund deposit) ──
+
+    /**
+     * Disposes of a cancelled booking's captured funds. The balance (FULL) is always refunded — the
+     * work was not done. The deposit is forfeited to the center only when the <em>customer</em>
+     * cancelled under a {@link CancellationPolicy#RETAIN} policy (the no-show lever); in every other
+     * case (policy REFUND, or the center cancelled) the deposit is refunded too. Idempotent.
+     */
+    @Transactional
+    public void handleDepositOnCancellation(Long bookingId, boolean cancelledByCustomer) {
+        Booking booking = loadBooking(bookingId);
+        List<Payment> captured = paymentRepository.findByBookingIdOrderByCreatedAtDesc(bookingId).stream()
+                .filter(p -> CAPTURED.contains(p.getStatus()))
+                .toList();
+        if (captured.isEmpty()) {
+            return; // nothing captured (e.g. cash, or cancelled before paying) — nothing to dispose
+        }
+        CancellationPolicy policy = depositConfigRepository.findByCenterId(booking.getCenter().getId())
+                .map(DepositConfig::getCancellationPolicy)
+                .orElse(CancellationPolicy.REFUND);
+
+        for (Payment p : captured) {
+            boolean isDeposit = p.getKind() == PaymentKind.DEPOSIT;
+            boolean forfeit = isDeposit && cancelledByCustomer && policy == CancellationPolicy.RETAIN;
+            if (forfeit) {
+                forfeitToCenter(p);
+            } else {
+                refundRemainingToCustomer(p, bookingId);
+            }
+        }
+    }
+
+    /** RETAIN no-show: release the held deposit to the center (it settles like a completed job). */
+    private void forfeitToCenter(Payment deposit) {
+        if (deposit.getStatus() != PaymentStatus.HELD) {
+            return; // already released/refunded
+        }
+        deposit.setReleaseEligible(true);
+        deposit.setStatus(PaymentStatus.RELEASED);
+        deposit.setReleasedAt(LocalDateTime.now());
+        paymentRepository.save(deposit);
+        log.info("Deposit payment {} forfeited to center on customer cancellation", deposit.getId());
+    }
+
+    /** Refund the not-yet-refunded remainder of a payment to the customer's wallet (v1). */
+    private void refundRemainingToCustomer(Payment p, Long bookingId) {
+        BigDecimal remaining = nz(p.getGrossAmount()).subtract(nz(p.getRefundedAmount()));
+        if (remaining.signum() <= 0) {
+            return;
+        }
+        Wallet wallet = getOrCreateWallet(p.getCustomer());
+        wallet.setBalance(wallet.getBalance().add(remaining));
+        walletRepository.save(wallet);
+        recordWalletTx(wallet, WalletTransactionType.REFUND, remaining, bookingId,
+                "Refund for cancelled booking", "استرداد لحجز ملغى");
+        p.setRefundedAmount(nz(p.getRefundedAmount()).add(remaining));
+        p.setStatus(PaymentStatus.REFUNDED);
+        paymentRepository.save(p);
+        log.info("Payment {} ({}) refunded {} to customer on cancellation", p.getId(), p.getKind(), remaining);
     }
 
     // ── Earnings dashboard ────────────────────────────────────────────────────
@@ -126,13 +234,36 @@ public class CenterPaymentService {
     public SettlementResponse getSettlement(User caller, Long bookingId) {
         Booking booking = loadBooking(bookingId);
         centerSecurity.requirePermission(booking.getCenter().getId(), caller, CenterPermission.VIEW_REVENUE);
-        Payment p = latestPayment(bookingId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Booking not paid yet"));
+        // Aggregate across the booking's captured payments — deposit + balance settle together (023).
+        List<Payment> captured = paymentRepository.findByBookingIdOrderByCreatedAtDesc(bookingId).stream()
+                .filter(p -> CAPTURED.contains(p.getStatus()))
+                .toList();
+        if (captured.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Booking not paid yet");
+        }
+        BigDecimal gross = BigDecimal.ZERO, commission = BigDecimal.ZERO;
+        BigDecimal refunded = BigDecimal.ZERO, net = BigDecimal.ZERO;
+        boolean anyHeld = false, allHeldEligible = true, anyDisputed = false;
+        LocalDateTime autoReleaseAt = null;
+        for (Payment p : captured) {
+            gross = gross.add(nz(p.getGrossAmount()));
+            commission = commission.add(nz(p.getCommissionAmount()));
+            refunded = refunded.add(nz(p.getRefundedAmount()));
+            net = net.add(nz(p.getNetAmount()));
+            if (p.getStatus() == PaymentStatus.HELD) {
+                anyHeld = true;
+                if (!p.isReleaseEligible()) allHeldEligible = false;
+                if (p.getAutoReleaseAt() != null) autoReleaseAt = p.getAutoReleaseAt();
+            }
+            if (p.isDisputed()) anyDisputed = true;
+        }
+        // Overall status: still escrowed while anything is held; otherwise the settled state.
+        PaymentStatus status = anyHeld ? PaymentStatus.HELD : captured.get(0).getStatus();
+        boolean releaseEligible = anyHeld ? allHeldEligible : true;
         return new SettlementResponse(
                 bookingId, deriveLines(booking),
-                p.getGrossAmount(), p.getCommissionRate(), p.getCommissionAmount(),
-                nz(p.getRefundedAmount()), p.getNetAmount(), p.getStatus(),
-                p.isReleaseEligible(), p.isDisputed(), p.getAutoReleaseAt());
+                gross, captured.get(0).getCommissionRate(), commission,
+                refunded, net, status, releaseEligible, anyDisputed, autoReleaseAt);
     }
 
     // ── Deposit config ────────────────────────────────────────────────────────

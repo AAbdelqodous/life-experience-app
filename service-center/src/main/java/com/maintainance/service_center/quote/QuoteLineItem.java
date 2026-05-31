@@ -34,4 +34,15 @@ public class QuoteLineItem {
     @Enumerated(EnumType.STRING)
     @Column(length = 32)
     private QuoteLineItemKind kind;
+
+    // Spec 025 — catalogued part reference. partId set + adHoc false → decrements stock on commit and
+    // snapshots salePrice×quantity into partsCost (R4). adHoc true → one-off part, no stock effect.
+    // partId null → pure labor/legacy line. quantity defaults to 1 for a part line.
+    @Column(name = "part_id")
+    private Long partId;
+
+    private Integer quantity;
+
+    @Column(name = "ad_hoc")
+    private boolean adHoc;
 }

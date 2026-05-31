@@ -22,7 +22,13 @@ record BookingInvoiceResponse(
         List<PaymentMethod> availableMethods,
         boolean releaseEligible,
         LocalDateTime autoReleaseAt,
-        String receiptUrl
+        String receiptUrl,
+        // Spec 023 — deposit netting: the balance still due is total − depositPaid.
+        BigDecimal depositRequired,
+        BigDecimal depositPaid,
+        BigDecimal amountDue,
+        // False when a customer cancellation would forfeit the paid deposit (RETAIN policy).
+        boolean depositRefundable
 ) {}
 
 record InitiatePaymentResponseDto(

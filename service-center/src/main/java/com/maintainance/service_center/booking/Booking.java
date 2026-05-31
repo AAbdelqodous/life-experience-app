@@ -136,6 +136,30 @@ public class Booking {
     private Boolean pickupRequired;
     private String pickupAddress;
 
+    // Spec 008 — fulfillment: how the service is delivered, the service address + window, and the
+    // fee snapshotted at creation. logisticsState tracks the current center-driven leg (display-only).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fulfillment_mode")
+    private FulfillmentMode fulfillmentMode;
+
+    @Column(name = "fulfillment_fee", precision = 10, scale = 3)
+    private BigDecimal fulfillmentFee;
+
+    @Embedded
+    private ServiceAddress serviceAddress;
+
+    @Embedded
+    private PickupWindow pickupWindow;
+
+    @Column(name = "logistics_state")
+    private String logisticsState;
+
+    @Column(name = "fulfillment_declined")
+    private Boolean fulfillmentDeclined;
+
+    @Column(name = "fulfillment_decline_reason")
+    private String fulfillmentDeclineReason;
+
     @OneToOne(mappedBy = "booking", cascade = CascadeType.ALL)
     private Review review;
 

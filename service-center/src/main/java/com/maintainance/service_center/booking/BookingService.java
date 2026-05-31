@@ -48,6 +48,7 @@ public class BookingService {
     private final DepartmentService departmentService;
     private final com.maintainance.service_center.department.DepartmentRepository departmentRepository;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+    private final com.maintainance.service_center.fulfillment.FulfillmentService fulfillmentService;
 
     private static final Set<BookingStatus> CLAIMABLE_STATUSES = Set.of(
             BookingStatus.CONFIRMED, BookingStatus.RESCHEDULED);
@@ -169,6 +170,18 @@ public class BookingService {
                 .paymentMethod(request.getPaymentMethod())
                 .paymentStatus(PaymentStatus.PENDING)
                 .build();
+
+        // Spec 008 — resolve the fulfillment choice: snapshot the service address + the computed fee,
+        // and set the initial logistics leg. DROP_OFF needs no address and is free.
+        FulfillmentMode fulfillmentMode = request.getFulfillmentMode() != null
+                ? request.getFulfillmentMode() : FulfillmentMode.DROP_OFF;
+        var fulfillment = fulfillmentService.prepare(center, customer, fulfillmentMode,
+                request.getServiceAddressId(), request.getServiceAddress());
+        booking.setFulfillmentMode(fulfillmentMode);
+        booking.setFulfillmentFee(fulfillment.fee());
+        booking.setServiceAddress(fulfillment.address());
+        booking.setPickupWindow(fulfillmentMode != FulfillmentMode.DROP_OFF ? request.getPickupWindow() : null);
+        booking.setLogisticsState(fulfillment.logisticsState());
 
         bookingRepository.save(booking);
         // Spec 023: the payment domain listens to snapshot the center's deposit onto this booking,
@@ -328,6 +341,9 @@ public class BookingService {
             recordStatusChange(booking, oldStatus, BookingStatus.CANCELLED, caller, actingRole,
                     request.getReason());
         }
+        // Spec 023: the payment domain disposes of captured funds (refund balance; forfeit or refund
+        // the deposit per the center's cancellation policy), in this same transaction.
+        eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId(), isCustomer));
         log.info("Cancelled booking id={} by {}", id, booking.getCancelledBy());
         return toResponse(booking);
     }
@@ -449,6 +465,11 @@ public class BookingService {
                 .finalCost(booking.getFinalCost())
                 .costNotes(booking.getCostNotes())
                 .depositAmount(booking.getDepositAmount())
+                .fulfillmentMode(booking.getFulfillmentMode())
+                .fulfillmentFee(booking.getFulfillmentFee())
+                .serviceAddress(booking.getServiceAddress())
+                .pickupWindow(booking.getPickupWindow())
+                .logisticsState(booking.getLogisticsState())
                 .paymentMethod(booking.getPaymentMethod())
                 .paymentStatus(booking.getPaymentStatus())
                 .paidAt(booking.getPaidAt())

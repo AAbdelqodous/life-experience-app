@@ -2,17 +2,22 @@ package com.maintainance.service_center.quote;
 
 import com.maintainance.service_center.booking.Booking;
 import com.maintainance.service_center.booking.BookingRepository;
+import com.maintainance.service_center.inventory.InventoryService;
+import com.maintainance.service_center.inventory.Part;
 import com.maintainance.service_center.staff.CenterPermission;
 import com.maintainance.service_center.staff.CenterSecurityService;
 import com.maintainance.service_center.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -28,6 +33,7 @@ public class BookingQuoteService {
     private final BookingQuoteRepository quoteRepository;
     private final BookingRepository bookingRepository;
     private final CenterSecurityService centerSecurity;
+    private final InventoryService inventoryService;
 
     public List<BookingQuoteResponse> getBookingQuotes(User caller, Long bookingId) {
         Booking booking = bookingRepository.findById(bookingId)
@@ -47,7 +53,14 @@ public class BookingQuoteService {
         centerSecurity.requirePermission(
                 booking.getCenter().getId(), caller, CenterPermission.MANAGE_PRICING);
 
-        BigDecimal subtotal = computeSubtotal(request.getLineItems());
+        // Spec 025 — map user lines first, snapshotting catalogued-part prices (salePrice×qty, R4),
+        // and derive the subtotal from the snapshotted lines so the total is server-authoritative.
+        Long centerId = booking.getCenter().getId();
+        List<QuoteLineItem> userLines = new ArrayList<>();
+        request.getLineItems().forEach(item -> userLines.add(toLineItem(item, centerId)));
+        BigDecimal subtotal = userLines.stream()
+                .map(l -> l.getPartsCost().add(l.getLaborCost()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal discount = request.getDiscountAmount() != null
                 ? request.getDiscountAmount() : BigDecimal.ZERO;
 
@@ -88,6 +101,10 @@ public class BookingQuoteService {
                     quoteRepository.save(prior);
                 }
             }
+            // Spec 025 (R5): superseding prior quote versions returns any stock those versions
+            // consumed; the new version re-consumes on its own send. Net-based, so it's a no-op
+            // when nothing was consumed.
+            inventoryService.reverseConsumption(bookingId, caller);
         }
 
         // Spec 022: prepend the system-generated DIAGNOSTIC_FEE line item before user lines
@@ -95,22 +112,17 @@ public class BookingQuoteService {
         // §BookingQuote extension — "If only parts/labor exist, populate laborCost = fee").
         // The kind discriminator + QuoteLineItemResponse.from() make this row immutable
         // on the wire (editable=false, removable=false, descriptionKey set).
-        java.util.List<QuoteLineItem> lineItems = new java.util.ArrayList<>();
+        List<QuoteLineItem> lineItems = new ArrayList<>();
         if (addDiagnosticFee) {
-            lineItems.add(new QuoteLineItem(
-                    "Diagnostic Fee", // server-side label; frontend resolves descriptionKey instead
-                    "رسوم التشخيص",
-                    BigDecimal.ZERO,
-                    diagnosticFee,
-                    QuoteLineItemKind.DIAGNOSTIC_FEE));
+            QuoteLineItem feeLine = new QuoteLineItem();
+            feeLine.setDescription("Diagnostic Fee"); // frontend resolves descriptionKey instead
+            feeLine.setDescriptionAr("رسوم التشخيص");
+            feeLine.setPartsCost(BigDecimal.ZERO);
+            feeLine.setLaborCost(diagnosticFee);
+            feeLine.setKind(QuoteLineItemKind.DIAGNOSTIC_FEE);
+            lineItems.add(feeLine);
         }
-        request.getLineItems().forEach(item ->
-                lineItems.add(new QuoteLineItem(
-                        item.getDescription(),
-                        item.getDescriptionAr(),
-                        item.getPartsCost(),
-                        item.getLaborCost(),
-                        null /* user line — null kind = treat as editable/removable */)));
+        lineItems.addAll(userLines); // already snapshotted above
 
         BookingQuote quote = new BookingQuote();
         quote.setBooking(booking);
@@ -152,15 +164,46 @@ public class BookingQuoteService {
         quote.setStatus(QuoteStatus.SENT);
         quote.setSentAt(LocalDateTime.now());
 
+        // Spec 025 — sending the quote commits its catalogued part lines: decrement stock atomically
+        // and record a booking-linked CONSUME movement (R3). Ad-hoc/labor lines have no stock effect.
+        Long centerId = booking.getCenter().getId();
+        for (QuoteLineItem line : quote.getLineItems()) {
+            if (line.getPartId() != null && !line.isAdHoc()) {
+                int qty = line.getQuantity() != null && line.getQuantity() > 0 ? line.getQuantity() : 1;
+                inventoryService.consume(centerId, line.getPartId(), qty, booking, caller);
+            }
+        }
+
         BookingQuote saved = quoteRepository.save(quote);
         log.info("Sent quote id={} for booking {} by user {}", quoteId, bookingId, caller.getId());
         return BookingQuoteResponse.from(saved);
     }
 
-    private BigDecimal computeSubtotal(List<QuoteLineItemRequest> items) {
-        return items.stream()
-                .map(item -> item.getPartsCost().add(item.getLaborCost()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    /** Spec 025 — map a request line, snapshotting a catalogued part's salePrice×quantity (R4). */
+    private QuoteLineItem toLineItem(QuoteLineItemRequest item, Long centerId) {
+        QuoteLineItem line = new QuoteLineItem();
+        line.setDescription(item.getDescription());
+        line.setDescriptionAr(item.getDescriptionAr());
+        line.setLaborCost(item.getLaborCost());
+        line.setKind(null); // user line — editable/removable
+        if (item.getPartId() != null && !item.isAdHoc()) {
+            int qty = (item.getQuantity() != null && item.getQuantity() > 0) ? item.getQuantity() : 1;
+            Part part = inventoryService.findActivePart(centerId, item.getPartId());
+            if (part == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Part not available in this center's catalog");
+            }
+            line.setPartId(part.getId());
+            line.setQuantity(qty);
+            line.setAdHoc(false);
+            line.setPartsCost(part.getSalePrice().multiply(BigDecimal.valueOf(qty))); // R4 price snapshot
+        } else {
+            line.setPartId(item.getPartId());
+            line.setQuantity(item.getQuantity());
+            line.setAdHoc(item.isAdHoc());
+            line.setPartsCost(item.getPartsCost());
+        }
+        return line;
     }
 
     /**

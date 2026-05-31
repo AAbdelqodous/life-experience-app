@@ -23,6 +23,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.server.ResponseStatusException;
+import com.maintainance.service_center.booking.FulfillmentMode;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -35,6 +37,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Spec 007 (customer) + 023 (center) — end-to-end payment/escrow against the real DB:
@@ -218,5 +221,161 @@ class PaymentIntegrationTest {
         // Available drops by the requested payout: 27.075 − 25.000 = 2.075.
         assertThat(centerService.getEarnings(owner).available()).isEqualByComparingTo("2.075");
         assertThat(payoutService.listPayouts(owner)).hasSize(1);
+    }
+
+    // ── Spec 023: deposit applied at booking creation ──
+
+    private Long bareBooking(String estimatedCost) {
+        return tx.execute(s -> bookingRepository.save(Booking.builder()
+                .bookingNumber("DEP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
+                .customer(customer).center(center)
+                .bookingDate(LocalDate.now()).bookingTime(LocalTime.of(10, 0))
+                .bookingStatus(BookingStatus.PENDING)
+                .estimatedCost(estimatedCost == null ? null : new BigDecimal(estimatedCost))
+                .build()).getId());
+    }
+
+    @Test
+    void deposit_flat_appliedOnCreation() {
+        centerService.updateDepositConfig(owner,
+                new UpdateDepositConfigRequest(DepositMode.FLAT, new BigDecimal("5.000"), null, null, CancellationPolicy.RETAIN));
+        Long id = bareBooking(null);
+        centerService.applyDepositOnCreation(id);
+        assertThat(bookingRepository.findById(id).orElseThrow().getDepositAmount()).isEqualByComparingTo("5.000");
+    }
+
+    @Test
+    void deposit_percent_appliedOnCreationFromEstimate() {
+        centerService.updateDepositConfig(owner,
+                new UpdateDepositConfigRequest(DepositMode.PERCENT, null, 20, null, CancellationPolicy.RETAIN));
+        Long id = bareBooking("30.000"); // 20% of 30.000 = 6.000
+        centerService.applyDepositOnCreation(id);
+        assertThat(bookingRepository.findById(id).orElseThrow().getDepositAmount()).isEqualByComparingTo("6.000");
+    }
+
+    @Test
+    void deposit_percent_skippedWhenNoEstimate() {
+        centerService.updateDepositConfig(owner,
+                new UpdateDepositConfigRequest(DepositMode.PERCENT, null, 20, null, CancellationPolicy.RETAIN));
+        Long id = bareBooking(null); // no estimate → deferred to quote time
+        centerService.applyDepositOnCreation(id);
+        assertThat(bookingRepository.findById(id).orElseThrow().getDepositAmount()).isNull();
+    }
+
+    @Test
+    void deposit_none_leavesBookingUntouched() {
+        // No DepositConfig saved for this center → no deposit.
+        Long id = bareBooking("30.000");
+        centerService.applyDepositOnCreation(id);
+        assertThat(bookingRepository.findById(id).orElseThrow().getDepositAmount()).isNull();
+    }
+
+    @Test
+    void deposit_paidUpfront_creditsBalance_andSettlesTogether() {
+        centerService.updateDepositConfig(owner,
+                new UpdateDepositConfigRequest(DepositMode.FLAT, new BigDecimal("5.000"), null, null, CancellationPolicy.RETAIN));
+        Booking b = bookingWithApprovedQuote("28.500");
+        centerService.applyDepositOnCreation(b.getId());
+        assertThat(bookingRepository.findById(b.getId()).orElseThrow().getDepositAmount()).isEqualByComparingTo("5.000");
+
+        // 1) Pay the deposit upfront → held in escrow.
+        service.initiateDeposit(customer, new InitiatePaymentRequestDto(
+                b.getId(), PaymentMethod.KNET, false, false, null, "dep-" + b.getId()));
+        var inv = service.getInvoice(customer, b.getId());
+        assertThat(inv.total()).isEqualByComparingTo("28.500");
+        assertThat(inv.depositPaid()).isEqualByComparingTo("5.000");
+        assertThat(inv.amountDue()).isEqualByComparingTo("23.500");
+        assertThat(inv.paymentStatus()).isEqualTo(PaymentStatus.PENDING); // balance still owed
+
+        // 2) Pay the balance → invoice fully covered, escrow held.
+        service.initiate(customer, new InitiatePaymentRequestDto(
+                b.getId(), PaymentMethod.KNET, false, false, null, "bal-" + b.getId()));
+        var inv2 = service.getInvoice(customer, b.getId());
+        assertThat(inv2.amountDue()).isEqualByComparingTo("0.000");
+        assertThat(inv2.paymentStatus()).isEqualTo(PaymentStatus.HELD);
+
+        // 3) Complete → both held payments release-eligible → release both.
+        centerService.markReleaseEligible(b.getId());
+        service.release(customer, b.getId());
+
+        // 4) Settlement aggregates deposit + balance: 28.500 gross − 1.425 commission = 27.075 net.
+        var settlement = centerService.getSettlement(owner, b.getId());
+        assertThat(settlement.gross()).isEqualByComparingTo("28.500");
+        assertThat(settlement.commissionAmount()).isEqualByComparingTo("1.425");
+        assertThat(settlement.net()).isEqualByComparingTo("27.075");
+        assertThat(settlement.paymentStatus()).isEqualTo(PaymentStatus.RELEASED);
+        assertThat(centerService.getEarnings(owner).available()).isEqualByComparingTo("27.075");
+    }
+
+    @Test
+    void initiateDeposit_rejectedWhenNoDepositRequired() {
+        Booking b = bookingWithApprovedQuote("28.500"); // no deposit config → no deposit on the booking
+        assertThatThrownBy(() -> service.initiateDeposit(customer, new InitiatePaymentRequestDto(
+                b.getId(), PaymentMethod.KNET, false, false, null, "dep-x-" + b.getId())))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("No deposit");
+    }
+
+    // ── Spec 023: deposit forfeiture / refund on cancellation ──
+
+    private Booking bookingWithPaidDeposit(CancellationPolicy policy, String key) {
+        centerService.updateDepositConfig(owner,
+                new UpdateDepositConfigRequest(DepositMode.FLAT, new BigDecimal("5.000"), null, null, policy));
+        Booking b = bookingWithApprovedQuote("28.500");
+        centerService.applyDepositOnCreation(b.getId());
+        service.initiateDeposit(customer, new InitiatePaymentRequestDto(
+                b.getId(), PaymentMethod.KNET, false, false, null, key + b.getId()));
+        return b;
+    }
+
+    @Test
+    void deposit_forfeitedToCenter_whenCustomerCancels_underRetain() {
+        Booking b = bookingWithPaidDeposit(CancellationPolicy.RETAIN, "dep-ret-");
+        BigDecimal walletBefore = service.getWallet(customer).balance();
+
+        centerService.handleDepositOnCancellation(b.getId(), true); // customer cancels
+
+        // Deposit released to the center; customer NOT credited.
+        assertThat(service.getWallet(customer).balance()).isEqualByComparingTo(walletBefore);
+        assertThat(centerService.getSettlement(owner, b.getId()).paymentStatus()).isEqualTo(PaymentStatus.RELEASED);
+        // Center keeps the net of the forfeited deposit: 5.000 − 5% = 4.750.
+        assertThat(centerService.getEarnings(owner).available()).isEqualByComparingTo("4.750");
+    }
+
+    @Test
+    void deposit_refundedToCustomer_whenCustomerCancels_underRefundPolicy() {
+        Booking b = bookingWithPaidDeposit(CancellationPolicy.REFUND, "dep-ref-");
+        BigDecimal walletBefore = service.getWallet(customer).balance();
+
+        centerService.handleDepositOnCancellation(b.getId(), true);
+
+        assertThat(service.getWallet(customer).balance()).isEqualByComparingTo(walletBefore.add(new BigDecimal("5.000")));
+        assertThat(centerService.getEarnings(owner).available()).isEqualByComparingTo("0.000");
+    }
+
+    @Test
+    void invoice_includesFulfillmentFeeLine() {
+        // Spec 008 — a booking with a fulfillment fee surfaces a FULFILLMENT_FEE line in the invoice.
+        Booking b = bookingWithApprovedQuote("28.500");
+        tx.executeWithoutResult(s -> {
+            Booking fresh = bookingRepository.findById(b.getId()).orElseThrow();
+            fresh.setFulfillmentMode(FulfillmentMode.AT_HOME);
+            fresh.setFulfillmentFee(new BigDecimal("5.000"));
+            bookingRepository.save(fresh);
+        });
+        var invoice = service.getInvoice(customer, b.getId());
+        assertThat(invoice.lines()).anyMatch(l -> "FULFILLMENT_FEE".equals(l.kind()));
+        assertThat(invoice.total()).isEqualByComparingTo("33.500"); // 28.500 service + 5.000 fulfillment
+    }
+
+    @Test
+    void deposit_refundedToCustomer_whenCenterCancels_evenUnderRetain() {
+        Booking b = bookingWithPaidDeposit(CancellationPolicy.RETAIN, "dep-cc-");
+        BigDecimal walletBefore = service.getWallet(customer).balance();
+
+        centerService.handleDepositOnCancellation(b.getId(), false); // center cancels — don't penalise customer
+
+        assertThat(service.getWallet(customer).balance()).isEqualByComparingTo(walletBefore.add(new BigDecimal("5.000")));
+        assertThat(centerService.getEarnings(owner).available()).isEqualByComparingTo("0.000");
     }
 }

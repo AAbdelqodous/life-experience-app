@@ -1,7 +1,7 @@
 package com.maintainance.service_center.payment;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -9,12 +9,12 @@ import java.util.UUID;
 
 /**
  * Dev/no-account stub for {@link PaymentGateway}. Returns a placeholder checkout URL and reports
- * synchronous capture, so the escrow flow is exercisable end-to-end without a live MyFatoorah/Tap
- * merchant account. Replace with a real, webhook-driven implementation (capturesSynchronously=false)
- * once a gateway account + HTTPS are provisioned. Backed off automatically if a real bean is present.
+ * synchronous capture, so the escrow flow is exercisable end-to-end without any gateway. This is the
+ * default; set {@code payment.gateway.mock-checkout=true} to use the realistic, webhook-style
+ * {@link MockMyFatoorahGateway} instead (or wire a real provider client in its place later).
  */
 @Component
-@ConditionalOnMissingBean(name = "realPaymentGateway")
+@ConditionalOnProperty(name = "payment.gateway.mock-checkout", havingValue = "false", matchIfMissing = true)
 @Slf4j
 public class StubPaymentGateway implements PaymentGateway {
 

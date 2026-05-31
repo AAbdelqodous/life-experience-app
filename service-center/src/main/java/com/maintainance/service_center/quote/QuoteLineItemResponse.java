@@ -33,6 +33,11 @@ public class QuoteLineItemResponse {
     // Spec 022 — i18n key the frontend resolves for system-generated lines. Null on user lines.
     private String descriptionKey;
 
+    // Spec 025 — catalogued part ref (null = labor/legacy line), units consumed, and ad-hoc flag.
+    private Long partId;
+    private Integer quantity;
+    private boolean adHoc;
+
     public static QuoteLineItemResponse from(QuoteLineItem item) {
         boolean systemLine = item.getKind() == QuoteLineItemKind.DIAGNOSTIC_FEE;
         return QuoteLineItemResponse.builder()
@@ -44,6 +49,9 @@ public class QuoteLineItemResponse {
                 .editable(!systemLine)
                 .removable(!systemLine)
                 .descriptionKey(systemLine ? "quote.diagnosticFee.label" : null)
+                .partId(item.getPartId())
+                .quantity(item.getQuantity())
+                .adHoc(item.isAdHoc())
                 .build();
     }
 }

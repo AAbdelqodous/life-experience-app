@@ -32,6 +32,13 @@ public class PaymentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.initiate(caller, request));
     }
 
+    // Spec 023 — pay the booking's required deposit upfront; later credited against the balance.
+    @PostMapping("/payments/deposit")
+    public ResponseEntity<InitiatePaymentResponseDto> initiateDeposit(
+            @AuthenticationPrincipal User caller, @Valid @RequestBody InitiatePaymentRequestDto request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.initiateDeposit(caller, request));
+    }
+
     @GetMapping("/payments/{paymentId}")
     public ResponseEntity<PaymentStatusResponseDto> status(
             @AuthenticationPrincipal User caller, @PathVariable Long paymentId) {

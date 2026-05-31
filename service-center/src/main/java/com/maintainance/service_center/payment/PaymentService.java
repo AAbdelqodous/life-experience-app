@@ -38,6 +38,8 @@ public class PaymentService {
     private static final String RETURN_URL_PREFIX = "https://app.maintenance.example/payment-return";
     private static final List<PaymentMethod> AVAILABLE_METHODS =
             List.of(PaymentMethod.KNET, PaymentMethod.CARD, PaymentMethod.APPLE_PAY, PaymentMethod.WALLET);
+    private static final java.util.Set<PaymentStatus> CAPTURED =
+            java.util.EnumSet.of(PaymentStatus.HELD, PaymentStatus.RELEASED, PaymentStatus.PAID);
 
     private final PaymentRepository paymentRepository;
     private final WalletRepository walletRepository;
@@ -45,6 +47,7 @@ public class PaymentService {
     private final SavedMethodRepository savedMethodRepository;
     private final BookingRepository bookingRepository;
     private final BookingQuoteRepository quoteRepository;
+    private final DepositConfigRepository depositConfigRepository;
     private final PaymentGateway gateway;
 
     // ── Invoice ──────────────────────────────────────────────────────────────
@@ -55,18 +58,32 @@ public class PaymentService {
         List<InvoiceLineDto> lines = deriveLines(booking);
         BigDecimal total = lines.stream().map(InvoiceLineDto::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        Payment latest = paymentRepository.findByBookingIdOrderByCreatedAtDesc(bookingId)
-                .stream().findFirst().orElse(null);
-        PaymentStatus status = latest != null ? latest.getStatus() : PaymentStatus.PENDING;
-        boolean releaseEligible = latest != null && latest.isReleaseEligible();
+        List<Payment> payments = paymentRepository.findByBookingIdOrderByCreatedAtDesc(bookingId);
+        // The invoice status reflects the FULL (balance) payment; the deposit is summarised apart.
+        Payment fullPayment = payments.stream().filter(p -> kindOf(p) == PaymentKind.FULL).findFirst().orElse(null);
+        PaymentStatus status = fullPayment != null ? fullPayment.getStatus() : PaymentStatus.PENDING;
+        boolean releaseEligible = fullPayment != null && fullPayment.isReleaseEligible();
         boolean settled = status == PaymentStatus.RELEASED || status == PaymentStatus.PAID;
+
+        BigDecimal depositRequired = nz(booking.getDepositAmount());
+        BigDecimal depositPaid = capturedDepositTotal(payments);
+        BigDecimal fullPaid = fullPayment != null && CAPTURED.contains(fullPayment.getStatus())
+                ? nz(fullPayment.getGrossAmount()) : BigDecimal.ZERO;
+        BigDecimal amountDue = total.subtract(depositPaid).subtract(fullPaid).max(BigDecimal.ZERO);
+        BigDecimal paidAmount = depositPaid.add(fullPaid);
+        // Whether a customer cancellation would refund the deposit (RETAIN ⇒ forfeited). Default
+        // REFUND when the center has no policy configured (matches the cancellation disposition).
+        boolean depositRefundable = depositConfigRepository.findByCenterId(booking.getCenter().getId())
+                .map(c -> c.getCancellationPolicy() != CancellationPolicy.RETAIN)
+                .orElse(true);
 
         return new BookingInvoiceResponse(
                 bookingId, lines, total, "KWD", status,
-                latest != null && status != PaymentStatus.PENDING ? latest.getGrossAmount() : null,
+                paidAmount.signum() > 0 ? paidAmount : null,
                 true, AVAILABLE_METHODS, releaseEligible,
-                latest != null ? latest.getAutoReleaseAt() : null,
-                settled ? "https://app.maintenance.example/receipts/" + bookingId : null);
+                fullPayment != null ? fullPayment.getAutoReleaseAt() : null,
+                settled ? "https://app.maintenance.example/receipts/" + bookingId : null,
+                depositRequired, depositPaid, amountDue, depositRefundable);
     }
 
     private List<InvoiceLineDto> deriveLines(Booking booking) {
@@ -89,12 +106,21 @@ public class PaymentService {
             if (quote.getDiscountAmount() != null && quote.getDiscountAmount().signum() > 0) {
                 lines.add(new InvoiceLineDto("Discount", "خصم", quote.getDiscountAmount().negate(), "DISCOUNT"));
             }
-            return lines;
+            return withFulfillmentFee(lines, booking);
         }
         // Fallback: a single line from the booking cost.
         BigDecimal cost = booking.getFinalCost() != null ? booking.getFinalCost()
                 : booking.getEstimatedCost() != null ? booking.getEstimatedCost() : BigDecimal.ZERO;
         lines.add(new InvoiceLineDto("Service", "خدمة", cost, "SERVICE"));
+        return withFulfillmentFee(lines, booking);
+    }
+
+    /** Spec 008 — append the fulfillment fee (pickup/at-home) as an invoice line when present. */
+    private List<InvoiceLineDto> withFulfillmentFee(List<InvoiceLineDto> lines, Booking booking) {
+        if (booking.getFulfillmentFee() != null && booking.getFulfillmentFee().signum() > 0) {
+            lines.add(new InvoiceLineDto("Fulfillment fee", "رسوم التنفيذ",
+                    booking.getFulfillmentFee(), "FULFILLMENT_FEE"));
+        }
         return lines;
     }
 
@@ -110,16 +136,52 @@ public class PaymentService {
         }
 
         Booking booking = requireOwnedBooking(caller, req.bookingId());
-        BigDecimal gross = deriveLines(booking).stream()
+        List<Payment> payments = paymentRepository.findByBookingIdOrderByCreatedAtDesc(booking.getId());
+        BigDecimal total = deriveLines(booking).stream()
                 .map(InvoiceLineDto::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (gross.signum() <= 0) {
+        if (total.signum() <= 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Nothing to pay for this booking");
         }
+        // The balance owed nets out any deposit already captured (spec 023).
+        BigDecimal amountDue = total.subtract(capturedDepositTotal(payments));
+        if (amountDue.signum() <= 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This booking is already covered by the deposit");
+        }
+        return capturePayment(caller, booking, amountDue, req, PaymentKind.FULL);
+    }
 
+    /**
+     * Spec 023 — collect the booking's required deposit upfront (escrow-held like any payment, and
+     * later credited against the balance). Captures {@code booking.depositAmount}.
+     */
+    @Transactional
+    public InitiatePaymentResponseDto initiateDeposit(User caller, InitiatePaymentRequestDto req) {
+        Payment existing = paymentRepository.findByIdempotencyKey(req.idempotencyKey()).orElse(null);
+        if (existing != null) {
+            return toInitiateResponse(existing, existing.getGatewayReference() != null
+                    ? "https://gateway.stub.local/checkout/" + existing.getGatewayReference() : null);
+        }
+        Booking booking = requireOwnedBooking(caller, req.bookingId());
+        BigDecimal deposit = nz(booking.getDepositAmount());
+        if (deposit.signum() <= 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "No deposit is required for this booking");
+        }
+        List<Payment> payments = paymentRepository.findByBookingIdOrderByCreatedAtDesc(booking.getId());
+        if (capturedDepositTotal(payments).signum() > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Deposit already paid");
+        }
+        return capturePayment(caller, booking, deposit, req, PaymentKind.DEPOSIT);
+    }
+
+    /** Shared capture flow: commission snapshot, wallet-first split, gateway/stub capture. */
+    private InitiatePaymentResponseDto capturePayment(
+            User caller, Booking booking, BigDecimal gross, InitiatePaymentRequestDto req, PaymentKind kind) {
         Payment payment = new Payment();
         payment.setBooking(booking);
         payment.setCustomer(caller);
         payment.setCenter(booking.getCenter());
+        payment.setKind(kind);
         payment.setGrossAmount(gross);
         payment.setCommissionRate(COMMISSION_RATE);
         BigDecimal commission = gross.multiply(COMMISSION_RATE).setScale(3, RoundingMode.HALF_UP);
@@ -129,6 +191,7 @@ public class PaymentService {
         payment.setIdempotencyKey(req.idempotencyKey());
         payment.setStatus(PaymentStatus.PENDING);
 
+        boolean deposit = kind == PaymentKind.DEPOSIT;
         // Wallet-first split (R6).
         BigDecimal walletApplied = BigDecimal.ZERO;
         if (req.useWalletBalance()) {
@@ -138,7 +201,8 @@ public class PaymentService {
                 wallet.setBalance(wallet.getBalance().subtract(walletApplied));
                 walletRepository.save(wallet);
                 recordWalletTx(wallet, WalletTransactionType.PAYMENT, walletApplied.negate(),
-                        booking.getId(), "Payment for booking", "دفعة للحجز");
+                        booking.getId(), deposit ? "Deposit for booking" : "Payment for booking",
+                        deposit ? "عربون للحجز" : "دفعة للحجز");
             }
         }
         payment.setWalletAmount(walletApplied);
@@ -148,8 +212,7 @@ public class PaymentService {
 
         String checkoutUrl = null;
         if (externalAmount.signum() <= 0) {
-            // Wallet covered the whole amount — no gateway step.
-            capture(payment);
+            capture(payment); // wallet covered the whole amount — no gateway step
         } else {
             PaymentGateway.CheckoutSession session = gateway.createCheckout(payment, externalAmount);
             payment.setGatewayReference(session.reference());
@@ -164,8 +227,8 @@ public class PaymentService {
             saveStubCard(caller);
         }
         paymentRepository.save(payment);
-        log.info("Payment {} for booking {} → {} (wallet {}, external {})",
-                payment.getId(), booking.getId(), payment.getStatus(), walletApplied, externalAmount);
+        log.info("Payment {} ({}) for booking {} → {} (wallet {}, external {})",
+                payment.getId(), kind, booking.getId(), payment.getStatus(), walletApplied, externalAmount);
         return toInitiateResponse(payment, checkoutUrl);
     }
 
@@ -173,6 +236,34 @@ public class PaymentService {
         payment.setStatus(PaymentStatus.HELD);
         payment.setCapturedAt(LocalDateTime.now());
         payment.setAutoReleaseAt(LocalDateTime.now().plusHours(AUTO_RELEASE_HOURS));
+    }
+
+    /**
+     * Hosted-checkout callback (the gateway's webhook/redirect): confirm or fail a PENDING payment by
+     * its gateway reference. Idempotent — a repeat callback after settlement is a no-op. This is the
+     * single point a real provider's webhook would call; the mock hosted page calls it too.
+     */
+    @Transactional
+    public PaymentStatus confirmGatewayCallback(String gatewayReference, boolean success) {
+        Payment p = paymentRepository.findByGatewayReference(gatewayReference)
+                .orElseThrow(() -> new EntityNotFoundException("Unknown gateway reference: " + gatewayReference));
+        if (p.getStatus() != PaymentStatus.PENDING) {
+            return p.getStatus(); // already captured/failed — idempotent
+        }
+        if (success) {
+            capture(p);
+            log.info("Gateway callback: payment {} ({}) captured → HELD", p.getId(), gatewayReference);
+        } else {
+            p.setStatus(PaymentStatus.FAILED);
+            log.info("Gateway callback: payment {} ({}) failed", p.getId(), gatewayReference);
+        }
+        paymentRepository.save(p);
+        return p.getStatus();
+    }
+
+    /** External (non-wallet) amount still owed on a payment — what the hosted checkout collects. */
+    BigDecimal externalAmountOf(Payment p) {
+        return nz(p.getGrossAmount()).subtract(nz(p.getWalletAmount()));
     }
 
     @Transactional(readOnly = true)
@@ -188,16 +279,27 @@ public class PaymentService {
     @Transactional
     public ReleaseResponseDto release(User caller, Long bookingId) {
         requireOwnedBooking(caller, bookingId);
-        Payment held = latestHeld(bookingId);
-        if (held.isDisputed()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Payment is under dispute");
+        // Release every held payment for the booking together — deposit + balance (spec 023).
+        List<Payment> held = paymentRepository.findByBookingIdOrderByCreatedAtDesc(bookingId).stream()
+                .filter(p -> p.getStatus() == PaymentStatus.HELD)
+                .toList();
+        if (held.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "No held payment to act on");
         }
-        if (!held.isReleaseEligible()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Work is not marked complete yet");
+        for (Payment p : held) {
+            if (p.isDisputed()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Payment is under dispute");
+            }
+            if (!p.isReleaseEligible()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Work is not marked complete yet");
+            }
         }
-        held.setStatus(PaymentStatus.RELEASED);
-        held.setReleasedAt(LocalDateTime.now());
-        paymentRepository.save(held);
+        LocalDateTime now = LocalDateTime.now();
+        for (Payment p : held) {
+            p.setStatus(PaymentStatus.RELEASED);
+            p.setReleasedAt(now);
+        }
+        paymentRepository.saveAll(held);
         return new ReleaseResponseDto(bookingId, PaymentStatus.RELEASED);
     }
 
@@ -317,5 +419,19 @@ public class PaymentService {
 
     private static BigDecimal nz(BigDecimal v) {
         return v != null ? v : BigDecimal.ZERO;
+    }
+
+    /** Legacy rows persisted before the deposit feature have a null kind — treat them as FULL. */
+    private static PaymentKind kindOf(Payment p) {
+        return p.getKind() != null ? p.getKind() : PaymentKind.FULL;
+    }
+
+    /** Sum of captured DEPOSIT payments for a booking — what the balance owed is netted against. */
+    private BigDecimal capturedDepositTotal(List<Payment> bookingPayments) {
+        return bookingPayments.stream()
+                .filter(p -> kindOf(p) == PaymentKind.DEPOSIT)
+                .filter(p -> CAPTURED.contains(p.getStatus()))
+                .map(p -> nz(p.getGrossAmount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }

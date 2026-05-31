@@ -36,6 +36,7 @@ class PaymentServiceTest {
     @Mock SavedMethodRepository savedMethodRepository;
     @Mock BookingRepository bookingRepository;
     @Mock BookingQuoteRepository quoteRepository;
+    @Mock DepositConfigRepository depositConfigRepository;
     @Mock PaymentGateway gateway;
 
     @InjectMocks PaymentService service;
@@ -136,9 +137,8 @@ class PaymentServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("not marked complete");
 
-        // center marked complete → release-eligible → released
+        // center marked complete → release-eligible → released (release() now saveAll's held payments)
         held.setReleaseEligible(true);
-        when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArgument(0));
         var res = service.release(customer, 500L);
         assertThat(res.paymentStatus()).isEqualTo(PaymentStatus.RELEASED);
         assertThat(held.getReleasedAt()).isNotNull();

@@ -44,6 +44,12 @@ public class BookingResponse {
     private String costNotes;
     /** Spec 023 — deposit required at booking creation (null/zero = none). */
     private BigDecimal depositAmount;
+    // Spec 008 — fulfillment choice + the fee snapshotted at creation, address, window, and leg.
+    private FulfillmentMode fulfillmentMode;
+    private BigDecimal fulfillmentFee;
+    private ServiceAddress serviceAddress;
+    private PickupWindow pickupWindow;
+    private String logisticsState;
     private PaymentMethod paymentMethod;
     private PaymentStatus paymentStatus;
     private LocalDateTime paidAt;
