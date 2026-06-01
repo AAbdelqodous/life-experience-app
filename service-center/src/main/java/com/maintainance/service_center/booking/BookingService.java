@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -46,6 +47,8 @@ public class BookingService {
     private final BookingStatusHistoryRepository statusHistoryRepository;
     private final DepartmentService departmentService;
     private final com.maintainance.service_center.department.DepartmentRepository departmentRepository;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+    private final com.maintainance.service_center.fulfillment.FulfillmentService fulfillmentService;
 
     private static final Set<BookingStatus> CLAIMABLE_STATUSES = Set.of(
             BookingStatus.CONFIRMED, BookingStatus.RESCHEDULED);
@@ -168,7 +171,23 @@ public class BookingService {
                 .paymentStatus(PaymentStatus.PENDING)
                 .build();
 
+        // Spec 008 — resolve the fulfillment choice: snapshot the service address + the computed fee,
+        // and set the initial logistics leg. DROP_OFF needs no address and is free.
+        FulfillmentMode fulfillmentMode = request.getFulfillmentMode() != null
+                ? request.getFulfillmentMode() : FulfillmentMode.DROP_OFF;
+        var fulfillment = fulfillmentService.prepare(center, customer, fulfillmentMode,
+                request.getServiceAddressId(), request.getServiceAddress());
+        booking.setFulfillmentMode(fulfillmentMode);
+        booking.setFulfillmentFee(fulfillment.fee());
+        booking.setServiceAddress(fulfillment.address());
+        booking.setPickupWindow(fulfillmentMode != FulfillmentMode.DROP_OFF ? request.getPickupWindow() : null);
+        booking.setLogisticsState(fulfillment.logisticsState());
+
         bookingRepository.save(booking);
+        // Spec 023: the payment domain listens to snapshot the center's deposit onto this booking,
+        // in this same transaction, so the create response carries depositAmount. Booking stays
+        // decoupled from payment.
+        eventPublisher.publishEvent(new BookingCreatedEvent(booking.getId()));
         log.info("Created booking number={} for customer id={} at center id={}",
                 bookingNumber, customer.getId(), center.getId());
         return toResponse(booking);
@@ -272,7 +291,11 @@ public class BookingService {
         booking.setCompletionNotes(request.getCompletionNotes());
         booking.setFinalCost(request.getFinalCost());
         booking.setCostNotes(request.getCostNotes());
-        booking.setCompletionImageUrls(request.getCompletionImageUrls() != null ? request.getCompletionImageUrls() : List.of());
+        // Must be a mutable collection — Hibernate clears it on subsequent merges (e.g. when the
+        // released payment cascades a booking merge). An immutable List.of() throws UnsupportedOperation.
+        booking.setCompletionImageUrls(request.getCompletionImageUrls() != null
+                ? new ArrayList<>(request.getCompletionImageUrls())
+                : new ArrayList<>());
         booking.setPaymentStatus(resolvedPaymentStatus);
         if (resolvedPaymentStatus == PaymentStatus.PAID) {
             booking.setPaidAt(LocalDateTime.now());
@@ -281,6 +304,9 @@ public class BookingService {
         bookingRepository.save(booking);
         recordStatusChange(booking, oldStatus, BookingStatus.COMPLETED, caller, membership.getRole(),
                 request.getCompletionNotes());
+        // Folded escrow release-trigger: the payment domain listens and flips its held funds to
+        // release-eligible within this same transaction (spec 023). Booking stays decoupled from payment.
+        eventPublisher.publishEvent(new BookingCompletedEvent(booking.getId(), caller.getId()));
         log.info("Completed booking id={}", id);
         return toResponse(booking);
     }
@@ -315,6 +341,9 @@ public class BookingService {
             recordStatusChange(booking, oldStatus, BookingStatus.CANCELLED, caller, actingRole,
                     request.getReason());
         }
+        // Spec 023: the payment domain disposes of captured funds (refund balance; forfeit or refund
+        // the deposit per the center's cancellation policy), in this same transaction.
+        eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId(), isCustomer));
         log.info("Cancelled booking id={} by {}", id, booking.getCancelledBy());
         return toResponse(booking);
     }
@@ -435,6 +464,12 @@ public class BookingService {
                 .estimatedCost(booking.getEstimatedCost())
                 .finalCost(booking.getFinalCost())
                 .costNotes(booking.getCostNotes())
+                .depositAmount(booking.getDepositAmount())
+                .fulfillmentMode(booking.getFulfillmentMode())
+                .fulfillmentFee(booking.getFulfillmentFee())
+                .serviceAddress(booking.getServiceAddress())
+                .pickupWindow(booking.getPickupWindow())
+                .logisticsState(booking.getLogisticsState())
                 .paymentMethod(booking.getPaymentMethod())
                 .paymentStatus(booking.getPaymentStatus())
                 .paidAt(booking.getPaidAt())

@@ -73,4 +73,11 @@ public class BookingRequest {
     private String pickupAddress;
 
     private PaymentMethod paymentMethod;
+
+    // Spec 008 — fulfillment choice (defaults DROP_OFF). For non-drop-off, either reference a saved
+    // address by id or send an inline serviceAddress, plus a pickup/arrival window.
+    private FulfillmentMode fulfillmentMode;
+    private Long serviceAddressId;
+    private ServiceAddress serviceAddress;
+    private PickupWindow pickupWindow;
 }

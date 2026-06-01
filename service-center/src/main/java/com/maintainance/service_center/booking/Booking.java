@@ -73,6 +73,9 @@ public class Booking {
     @Column(length = 500)
     private String serviceDescription;
 
+    /** Spec 009/024 — set when this booking was created by accepting a quote request. */
+    private Long originRequestId;
+
     @Column(length = 1000)
     private String problemDescription;
 
@@ -93,6 +96,15 @@ public class Booking {
     private BigDecimal estimatedCost;
     private BigDecimal finalCost;
     private String costNotes;
+
+    /**
+     * Spec 023 — the deposit the center required for this booking, snapshotted at creation from the
+     * center's DepositConfig (cut no-shows). Null/zero = no deposit. A plain amount so the booking
+     * package stays decoupled from the payment package (set via BookingDepositListener on the
+     * payment side); it is later applied to the final invoice.
+     */
+    @Column(name = "deposit_amount", precision = 10, scale = 3)
+    private BigDecimal depositAmount;
 
     @Enumerated(EnumType.STRING)
     private PaymentMethod paymentMethod;
@@ -123,6 +135,30 @@ public class Booking {
     private Boolean isUrgent;
     private Boolean pickupRequired;
     private String pickupAddress;
+
+    // Spec 008 — fulfillment: how the service is delivered, the service address + window, and the
+    // fee snapshotted at creation. logisticsState tracks the current center-driven leg (display-only).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fulfillment_mode")
+    private FulfillmentMode fulfillmentMode;
+
+    @Column(name = "fulfillment_fee", precision = 10, scale = 3)
+    private BigDecimal fulfillmentFee;
+
+    @Embedded
+    private ServiceAddress serviceAddress;
+
+    @Embedded
+    private PickupWindow pickupWindow;
+
+    @Column(name = "logistics_state")
+    private String logisticsState;
+
+    @Column(name = "fulfillment_declined")
+    private Boolean fulfillmentDeclined;
+
+    @Column(name = "fulfillment_decline_reason")
+    private String fulfillmentDeclineReason;
 
     @OneToOne(mappedBy = "booking", cascade = CascadeType.ALL)
     private Review review;

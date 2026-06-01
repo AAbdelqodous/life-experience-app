@@ -54,6 +54,9 @@ public class SecurityConfig {
                                 // Service catalog + categories are public bootstrap reads
                                 .requestMatchers(HttpMethod.GET, "/services/**").permitAll()
                                 .requestMatchers(HttpMethod.GET, "/categories/**").permitAll()
+                                // Spec 007 — the (mock) hosted-checkout page + its callback are opened
+                                // in a WebView without the app JWT, exactly like a real gateway page.
+                                .requestMatchers("/gateway/mock/**").permitAll()
                                 // Lookup admin paths (write + admin-reads) must be ADMIN
                                 .requestMatchers(HttpMethod.POST,   "/lookups/**").hasRole("ADMIN")
                                 .requestMatchers(HttpMethod.PUT,    "/lookups/**").hasRole("ADMIN")

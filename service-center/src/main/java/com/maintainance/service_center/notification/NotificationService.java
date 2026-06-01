@@ -151,6 +151,64 @@ public class NotificationService {
         createNotification(request, customer);
     }
 
+    // ── Quote requests / marketplace (spec 009/024) ──────────────────────────
+
+    /** → matched center owner: a new quote request (lead) arrived in their category. */
+    @Transactional
+    public void notifyNewQuoteRequest(User centerUser, Long requestId, String categoryEn, String categoryAr) {
+        if (centerUser == null) return;
+        createNotification(NotificationRequest.builder()
+                .titleEn("New quote request").titleAr("طلب عرض سعر جديد")
+                .bodyEn("A customer requested a quote for " + categoryEn + ".")
+                .bodyAr("طلب عميل عرض سعر لـ " + categoryAr + ".")
+                .notificationType(NotificationType.NEW_QUOTE_REQUEST)
+                .notificationPriority(NotificationPriority.NORMAL)
+                .referenceType("QUOTE_REQUEST").referenceId(requestId)
+                .build(), centerUser);
+    }
+
+    /** → customer: a center submitted a quote on their request. */
+    @Transactional
+    public void notifyQuoteReceived(User customer, Long requestId) {
+        if (customer == null) return;
+        createNotification(NotificationRequest.builder()
+                .titleEn("New quote received").titleAr("وصل عرض سعر جديد")
+                .bodyEn("A center sent you a quote. Compare and choose the best one.")
+                .bodyAr("أرسل لك أحد المراكز عرض سعر. قارن واختر الأفضل.")
+                .notificationType(NotificationType.QUOTE_RECEIVED)
+                .notificationPriority(NotificationPriority.NORMAL)
+                .referenceType("QUOTE_REQUEST").referenceId(requestId)
+                .build(), customer);
+    }
+
+    /** → winning center owner: the customer accepted their quote (a booking was created). */
+    @Transactional
+    public void notifyQuoteWon(User centerUser, Long bookingId) {
+        if (centerUser == null) return;
+        createNotification(NotificationRequest.builder()
+                .titleEn("You won the job!").titleAr("لقد فزت بالمهمة!")
+                .bodyEn("A customer accepted your quote. A new booking has been created.")
+                .bodyAr("قبل العميل عرضك. تم إنشاء حجز جديد.")
+                .notificationType(NotificationType.QUOTE_ACCEPTED)
+                .notificationPriority(NotificationPriority.HIGH)
+                .referenceType("BOOKING").referenceId(bookingId)
+                .build(), centerUser);
+    }
+
+    /** → other center owners: the customer chose a different center. */
+    @Transactional
+    public void notifyQuoteNotSelected(User centerUser, Long requestId) {
+        if (centerUser == null) return;
+        createNotification(NotificationRequest.builder()
+                .titleEn("Quote not selected").titleAr("لم يتم اختيار العرض")
+                .bodyEn("The customer chose another center for this request.")
+                .bodyAr("اختار العميل مركزاً آخر لهذا الطلب.")
+                .notificationType(NotificationType.QUOTE_NOT_SELECTED)
+                .notificationPriority(NotificationPriority.LOW)
+                .referenceType("QUOTE_REQUEST").referenceId(requestId)
+                .build(), centerUser);
+    }
+
     /**
      * Mark notification as read
      */

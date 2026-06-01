@@ -38,5 +38,19 @@ public enum CenterPermission {
     // Re-route (spec 022). Names are part of the frontend wire contract
     // (types/staff.ts). No endpoints in this session consume them yet.
     REROUTE_BOOKING_ANY,
-    REROUTE_BOOKING_ASSIGNED
+    REROUTE_BOOKING_ASSIGNED,
+
+    // Quote requests inbox (spec 024). Respond to customer quote requests: view the inbox,
+    // submit/edit/withdraw the center's quote. Held by OWNER, BRANCH_MANAGER, RECEPTIONIST.
+    RESPOND_TO_QUOTES,
+
+    // Payments/earnings/payouts (spec 023). Manage payout account, request payouts, issue refunds.
+    // Held by OWNER, BRANCH_MANAGER, ACCOUNTANT. (Earnings *viewing* reuses VIEW_REVENUE.)
+    MANAGE_PAYOUTS,
+
+    // Inventory & parts (spec 025). MANAGE_INVENTORY = catalog CRUD + receive/adjust stock
+    // (OWNER, BRANCH_MANAGER); CONSUME_PARTS = add catalogued parts onto a booking's quote
+    // (OWNER, BRANCH_MANAGER, RECEPTIONIST, TECHNICIAN).
+    MANAGE_INVENTORY,
+    CONSUME_PARTS
 }
